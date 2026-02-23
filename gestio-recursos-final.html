@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GRC · Gestió de Recursos 26/27</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>body { margin: 0; padding: 0; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+
+const SUPABASE_URL = "https://yibsfupqsscnucaimbzm.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpYnNmdXBxc3NjbnVjYWltYnptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2Mjg1NjMsImV4cCI6MjA4NzIwNDU2M30.jfxlQANVGSc64A4NhQ_qTXp2wT47mbKvTKMyUMAN2Ys";
+const SUPABASE_PUB = "sb_publishable_NEAz7UOl7mtTguYJQYEgbA_XWQno5C8";
+
+async function sbFetch(path, opts={}) {
+  // Try with anon key first, then publishable key
+  const headers = {
+    "Content-Type": "application/json",
+    "apikey": SUPABASE_KEY,
+    "Authorization": "Bearer " + SUPABASE_KEY,
+    ...(opts.headers||{})
+  };
+  const res = await fetch(SUPABASE_URL + path, {...opts, headers});
+  return res;
+}
+
+window.storage = {
+  get: async (key) => {
+    try {
+      const res = await sbFetch("/rest/v1/grc_data?id=eq." + key + "&select=data");
+      if (!res.ok) { console.error("GET error:", res.status, await res.text()); return null; }
+      const rows = await res.json();
+      if (rows && rows.length > 0) return { value: JSON.stringify(rows[0].data) };
+      return null;
+    } catch(e) { console.error("Storage get error:", e); return null; }
+  },
+  set: async (key, value) => {
+    try {
+      const data = typeof value === "string" ? JSON.parse(value) : value;
+      const res = await sbFetch("/rest/v1/grc_data?id=eq." + key, {
+        method: "PATCH",
+        headers: { "Prefer": "return=minimal" },
+        body: JSON.stringify({ data: data, updated_at: new Date().toISOString() })
+      });
+      if (!res.ok) { 
+        const txt = await res.text();
+        console.error("SET error:", res.status, txt); 
+        return null; 
+      }
+      return { value };
+    } catch(e) { console.error("Storage set error:", e); return null; }
+  }
+};
+
+  </script>
+  <script type="text/babel" data-presets="react">
+
+// ─── FONTS ────────────────────────────────────────────────────────────────────
+if (!document.getElementById("grc-fonts")) {
+  const l = document.createElement("link");
+  l.id = "grc-fonts"; l.rel = "stylesheet";
+  l.href = "https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap";
+  document.head.appendChild(l);
+}
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2,9);
+
+const CURSOS_BASE = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","CFGM","CFGS","Transversal","—"];
+const TIPUS_OPTS = [
+  {v:"materia",l:"Matèria"},
+  {v:"tutoria",l:"Tutoria"},
+  {v:"coordinacio",l:"Coordinació"},
+  {v:"dual",l:"Dual"},
+  {v:"biblioteca",l:"Biblioteca"},
+  {v:"projectes",l:"Projectes"},
+  {v:"altre",l:"Altre"},
+];
+
+// Lletres per als grups
+const LLETRES_GRUP = ["A","B","C","D","E","F","G","H"];
+
+// Nivells base per agrupar
+const NIVELLS_BASE = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","CFGM","CFGS"];
+
+// Grups especials base (es poden afegir/eliminar)
+const GRUPS_ESPECIALS_BASE = [
+  {id: uid(), nom: "Aula Oberta", color: "#7c3aed"},
+  {id: uid(), nom: "Aula d'Acollida", color: "#0891b2"},
+];
+
+const DEPTS_BASE = [
+  {id:"CAT",nom:"Català",dotacions:7,hPerDot:18,profes:"Núria Bosch Xifrà, Laia Vintcens Teixidor, Irene Carreró, Jordi Bota Pararol, Maria del Mar Prieto Segura, Joan Emili Roig Matoses, Pau Sánchez Sales"},
+  {id:"CAST",nom:"Castellà",dotacions:7,hPerDot:18,profes:"José Antonio Cáliz Roldán, Marta López López, David Ramos González, Sergi Garcia Romero, Alicia Bayona Carriba, Marina Matas Barroso, Marta Barber Florit"},
+  {id:"MATES",nom:"Matemàtiques",dotacions:9,hPerDot:18,profes:"Jordi Rodríguez Rebollo, Ana Maria Naranjo Salcedo, Albert Foradada Bermejo, Rafael Llinàs Matias, Joaquin Ruíz Barrera, Alba Martín Pérez, Andreu Arredondo Rodríguez, Antònia Aguilera Garrido, Georgina Castrillo Cabia"},
+  {id:"TECNO",nom:"Tecnologia i Ed. Visual",dotacions:5,hPerDot:18,profes:"Concepció Berney Pujol, Antonio Benito, Marta Brugulat Frigolé, Yolanda Fortún Hernández, Sara Cabarrocas Figueras"},
+  {id:"IDIOMES",nom:"Llengües Estrangeres",dotacions:9,hPerDot:18,profes:"Mercedes Maria Madera Ferreiro, Beatriz Guarnido Núñez, Violant Garriga Rovira, Mireia Vinyes Duran, Fanny Flores Santín, Gemma Sola González, Maria Gorini Montero, Maria Cristina Carreras Carriqui, Anna González Baena"},
+  {id:"CIENCIES",nom:"Ciències",dotacions:7,hPerDot:18,profes:"Anna Maria Domènech Coll, José Ignacio Pérez Valverde, Albert Alava Bayerri, Virginia Funes Collado, Pascual Vidal Claver, Encarna Pérez González, Carla Garrido Pérez"},
+  {id:"SOC",nom:"Ciències Socials",dotacions:14,hPerDot:18,profes:"Vicenç Gironès Romaní, Montserrat Nogueras Hernández, Neus Gonzalez Ranchal, Maria Teresa Ferrer Plana, Magdalena Caparrós Sánchez, Gizane Silva Campà, Rubén Enrique Morales Rojas, Joan Ràfols Soler, Anna Sais Pi, Jordi Molina Rodríguez, Anna Riu Lloveras, Maria Droch Vilà, Cristina Royes Mas, Ignasi Busqueta Franco"},
+  {id:"PSICO",nom:"Orientació",dotacions:6,hPerDot:18,profes:"Carmen Fernández Arias, M. Àngels Oller Salud, Farners Giralt Esquinas, Joana Cardoso Sabé, Miriam Fors Parés, Andrea Rodríguez López"},
+  {id:"EF",nom:"Ed. Física",dotacions:6,hPerDot:18,profes:"Fortu Solé Guàrdia, Xavier Ruiz Moreno, Joan Gosalvez Botella, Helena Mercader Llobera, Oriol Castañé Ayats, Abel Picazo Padial"},
+  {id:"ADM",nom:"Administració",dotacions:13,hPerDot:18,profes:"Montserrat Viñolas Vega, Susana Sagarra García, Judit Pagespetit, Magda Martinez Zarzo, Esther Mallol Blanch, Laia Fuyà Mellado, Sergi Garcia Vidal, Sergi Galera Sánchez, Aniol Peya del Moral, Xavier Torres Masó, Guillem Santiago Benet, Caterina Benítez Bruguera, Ferran Escarrà Poch"},
+  {id:"COMERÇ",nom:"Comerç i Màrqueting",dotacions:12,hPerDot:18,profes:"Susana Castilla Casado, Marissa Garcia Martín, Judit Llorens Juan, Enrique Oltra Llopis, Víctor Agelet de Saracibar, Juan Carlos Viñolas, Tamara Bautista, Edgar Delgado Bayón, Aniol Peya del Moral, Natalia Sherban Filonenko, Iu Guglielminotti, Marc Monnickendam Tarradellas"},
+  {id:"ELEC",nom:"Electricitat",dotacions:11,hPerDot:18,profes:"Rubén Fernández Carvajal, Antonio Pascual García Molina, Inés Jávega Soley, Josep Moncusí Trull, Ismael Carmona, Joaquim Riumalló Morera, David Gómez Díez, Hector Perezagua Minguell, Marc Trafach Avellaneda, Jordi Figueres Boada, Jordi Casas Roqueta"},
+  {id:"QUI",nom:"Química Industrial",dotacions:4,hPerDot:18,profes:"Carme Salvatella Solà, Ivan Gonzalez Molina, Cristina Barcena Saludes, Alejandra Fernández Ferrer"},
+];
+
+const CONCS_BASE = [
+  // CAT
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:4,obs:"Nou currículum LOMLOE"},
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAT",nom:"Llengua Catalana",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAT",nom:"Literatura Catalana",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:2,obs:"Optativa"},
+  {id:uid(),dept:"CAT",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:"Art. 66 decret"},
+  {id:uid(),dept:"CAT",nom:"Coordinació Lingüística",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // CAST
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Llengua Castellana",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CAST",nom:"Literatura Castellana",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:"PAU"},
+  {id:uid(),dept:"CAST",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // MATES
+  {id:uid(),dept:"MATES",nom:"Matemàtiques",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:4,obs:""},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:4,obs:""},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:4,obs:""},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques A",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:4,obs:"Itinerari acadèmic"},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques B",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:3,obs:"Itinerari aplicat"},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques CI",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:4,obs:"Ciències i Tecnologia"},
+  {id:uid(),dept:"MATES",nom:"Matemàtiques",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:4,obs:""},
+  {id:uid(),dept:"MATES",nom:"Estadística i Probabilitat",curs:"2n BAT",tipus:"materia",grups:1,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"MATES",nom:"Suport Matemàtic",curs:"1r ESO",tipus:"materia",grups:2,hPerGrup:2,obs:"Atenció diversitat"},
+  {id:uid(),dept:"MATES",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // ARTS
+  {id:uid(),dept:"TECNO",nom:"Educació Visual i Plàstica",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Educació Visual i Plàstica",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Expressió Artística",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Música",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Música",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Dibuix Tècnic",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Dibuix Artístic",curs:"1r BAT",tipus:"materia",grups:1,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"TECNO",nom:"Dibuix Tècnic",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:"PAU"},
+  {id:uid(),dept:"TECNO",nom:"Historia de l'Art",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:2,obs:"Comú modalitat arts"},
+  {id:uid(),dept:"TECNO",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // IDIOMES
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:"PAU"},
+  {id:uid(),dept:"IDIOMES",nom:"Francès",curs:"3r ESO",tipus:"materia",grups:2,hPerGrup:3,obs:"2a llengua estrangera"},
+  {id:uid(),dept:"IDIOMES",nom:"Francès",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"IDIOMES",nom:"Alemany",curs:"3r ESO",tipus:"materia",grups:1,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"IDIOMES",nom:"Anglès tècnic FP",curs:"CFGM",tipus:"materia",grups:3,hPerGrup:3,obs:"Cicles formatius"},
+  {id:uid(),dept:"IDIOMES",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // CIENCIES
+  {id:uid(),dept:"CIENCIES",nom:"Biologia i Geologia",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CIENCIES",nom:"Biologia i Geologia",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CIENCIES",nom:"Biologia i Geologia",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:3,obs:"Optativa A"},
+  {id:uid(),dept:"CIENCIES",nom:"Física i Química",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CIENCIES",nom:"Física i Química",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"CIENCIES",nom:"Biologia",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:4,obs:""},
+  {id:uid(),dept:"CIENCIES",nom:"Biologia",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:4,obs:"PAU"},
+  {id:uid(),dept:"CIENCIES",nom:"Física",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:4,obs:"PAU"},
+  {id:uid(),dept:"CIENCIES",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // SOC
+  {id:uid(),dept:"SOC",nom:"Ciències Socials",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Ciències Socials",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Ciències Socials",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Ciències Socials",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Història",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Història",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:"PAU"},
+  {id:uid(),dept:"SOC",nom:"Filosofia",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"FOL",curs:"CFGM",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"SOC",nom:"Empresa i Iniciativa Emprenedora",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:2,obs:""},
+  {id:uid(),dept:"SOC",nom:"Tutoria ESO",curs:"Transversal",tipus:"tutoria",grups:6,hPerGrup:1,obs:"Tots els grups ESO"},
+  {id:uid(),dept:"SOC",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // TECNO
+  {id:uid(),dept:"TECNO",nom:"Tecnologia i Digitalització",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Tecnologia i Digitalització",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Tecnologia",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:3,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Tecnologia",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"TECNO",nom:"Tecnologia Industrial",curs:"1r BAT",tipus:"materia",grups:1,hPerGrup:3,obs:""},
+  {id:uid(),dept:"TECNO",nom:"Informàtica",curs:"1r BAT",tipus:"materia",grups:1,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"TECNO",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // PSICO
+  {id:uid(),dept:"PSICO",nom:"Psicologia",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"PSICO",nom:"Orientació i Tutoria",curs:"1r ESO",tipus:"tutoria",grups:3,hPerGrup:1,obs:"1h/grup"},
+  {id:uid(),dept:"PSICO",nom:"Orientació i Tutoria",curs:"2n ESO",tipus:"tutoria",grups:3,hPerGrup:1,obs:""},
+  {id:uid(),dept:"PSICO",nom:"Orientació i Tutoria",curs:"3r ESO",tipus:"tutoria",grups:3,hPerGrup:1,obs:""},
+  {id:uid(),dept:"PSICO",nom:"Orientació i Tutoria",curs:"4t ESO",tipus:"tutoria",grups:3,hPerGrup:1,obs:"Orientació acadèmica"},
+  {id:uid(),dept:"PSICO",nom:"Atenció a la Diversitat",curs:"Transversal",tipus:"materia",grups:3,hPerGrup:3,obs:"PT/AL"},
+  {id:uid(),dept:"PSICO",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // EF
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"1r ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"2n ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"3r ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"4t ESO",tipus:"materia",grups:3,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"1r BAT",tipus:"materia",grups:2,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Educació Física",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:2,obs:""},
+  {id:uid(),dept:"EF",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // ADM
+  {id:uid(),dept:"ADM",nom:"Gestió Administrativa",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:8,obs:"Mòdul professional"},
+  {id:uid(),dept:"ADM",nom:"Ofimàtica i Arxiu",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:5,obs:""},
+  {id:uid(),dept:"ADM",nom:"Comptabilitat i Fiscalitat",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:5,obs:""},
+  {id:uid(),dept:"ADM",nom:"RRHH i Responsabilitat Social",curs:"CFGS",tipus:"materia",grups:1,hPerGrup:5,obs:""},
+  {id:uid(),dept:"ADM",nom:"FOL",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"ADM",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // COMERÇ
+  {id:uid(),dept:"COMERÇ",nom:"Màrqueting i Publicitat",curs:"CFGS",tipus:"materia",grups:1,hPerGrup:8,obs:""},
+  {id:uid(),dept:"COMERÇ",nom:"Gestió de Vendes",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:6,obs:""},
+  {id:uid(),dept:"COMERÇ",nom:"Logística",curs:"CFGM",tipus:"materia",grups:1,hPerGrup:5,obs:""},
+  {id:uid(),dept:"COMERÇ",nom:"FOL Comerç",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"COMERÇ",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // ELEC
+  {id:uid(),dept:"ELEC",nom:"Instal·lacions Elèctriques",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:8,obs:""},
+  {id:uid(),dept:"ELEC",nom:"Automatismes Industrials",curs:"CFGM",tipus:"materia",grups:1,hPerGrup:6,obs:""},
+  {id:uid(),dept:"ELEC",nom:"Electrònica Bàsica",curs:"CFGM",tipus:"materia",grups:1,hPerGrup:5,obs:""},
+  {id:uid(),dept:"ELEC",nom:"Seguretat Instal·lacions",curs:"CFGM",tipus:"materia",grups:1,hPerGrup:4,obs:""},
+  {id:uid(),dept:"ELEC",nom:"FOL Electricitat",curs:"CFGM",tipus:"materia",grups:2,hPerGrup:3,obs:""},
+  {id:uid(),dept:"ELEC",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+  // QUI
+  {id:uid(),dept:"QUI",nom:"Química",curs:"2n BAT",tipus:"materia",grups:2,hPerGrup:4,obs:"PAU"},
+  {id:uid(),dept:"QUI",nom:"Química Aplicada",curs:"4t ESO",tipus:"materia",grups:2,hPerGrup:3,obs:"Optativa"},
+  {id:uid(),dept:"QUI",nom:"Cap de Departament",curs:"—",tipus:"coordinacio",grups:1,hPerGrup:-3,obs:""},
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// Hores totals per al departament (inclou desdoblaments)
+const totalHores = c => c.grups * (c.hPerGrup + (c.hDesdobl || 0));
+// Hores que rep el grup (sense comptar desdoblaments)
+const horesGrup  = c => c.hPerGrup;
+
+function calcDept(dept, concs) {
+  const dc = concs.filter(c => c.dept === dept.id);
+  const disp = dept.dotacions * dept.hPerDot;
+  const nec  = dc.reduce((s, c) => s + totalHores(c), 0);
+  return { disp, nec, balanc: disp - nec, concs: dc };
+}
+
+const sign = n => n > 0 ? `+${n}` : `${n}`;
+const clsBal = b => b > 0 ? "chip-ok" : b < 0 ? "chip-err" : "chip-zero";
+const clsBadge = b => b > 0 ? "badge-ok" : b < 0 ? "badge-err" : "badge-warn";
+
+// Extract base course (without group letter) for grouping
+function getBaseCurs(curs) {
+  // Remove trailing letter/number groups like "A", "B", "(A, B)", etc.
+  return curs.replace(/\s+[A-H]$/, "").replace(/\s+\([A-H,\s]+\)$/, "").trim();
+}
+
+// ─── CSS ──────────────────────────────────────────────────────────────────────
+const CSS = `
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#0f1923;--ink2:#374151;--muted:#6b7280;--line:#e5e7eb;
+  --bg:#f0f2ee;--white:#fff;
+  --red:#dc2626;--red-bg:#fef2f2;--red-mid:#fecaca;
+  --green:#059669;--green-bg:#ecfdf5;--green-mid:#a7f3d0;
+  --amber:#d97706;--amber-bg:#fffbeb;--amber-mid:#fde68a;
+  --blue:#2563eb;--blue-bg:#eff6ff;
+  --navy:#0f1923;--accent:#e63946;
+  --purple:#7c3aed;--purple-bg:#f5f3ff;
+  --cyan:#0891b2;--cyan-bg:#ecfeff;--cyan-mid:#a5f3fc;
+  --teal:#0d9488;--teal-bg:#f0fdfa;
+}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+
+/* LAYOUT */
+.app{display:grid;grid-template-rows:54px 1fr;min-height:100vh}
+.topbar{
+  background:var(--navy);color:#fff;display:flex;align-items:center;
+  gap:12px;padding:0 18px;position:sticky;top:0;z-index:50;
+  box-shadow:0 2px 12px rgba(0,0,0,.35)
+}
+.topbar-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:17px;letter-spacing:-.5px}
+.topbar-logo em{color:var(--accent);font-style:normal}
+.tab-wrap{display:flex;gap:2px;margin-left:12px}
+.tab{background:none;border:none;color:rgba(255,255,255,.5);font-family:'Outfit',sans-serif;
+  font-size:12px;font-weight:500;padding:5px 12px;border-radius:5px;cursor:pointer;transition:all .13s}
+.tab:hover{background:rgba(255,255,255,.1);color:#fff}
+.tab.on{background:var(--accent);color:#fff}
+.topbar-right{margin-left:auto;display:flex;gap:6px}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 54px);overflow:hidden}
+
+/* SIDEBAR */
+.sidebar{background:var(--white);border-right:1px solid var(--line);overflow-y:auto;padding:10px 6px}
+.s-title{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);padding:4px 8px 6px}
+.dept-row{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;
+  border-radius:7px;cursor:pointer;transition:all .12s;margin-bottom:1px;
+  border:1.5px solid transparent
+}
+.dept-row:hover{background:var(--bg)}
+.dept-row.on{background:var(--navy);color:#fff}
+.dept-row.on .dr-sub,.dept-row.on .dr-name{color:rgba(255,255,255,.7)}
+.dept-row.on .di-badge{background:rgba(255,255,255,.15)}
+.dr-code{font-family:'Syne',sans-serif;font-weight:800;font-size:12px;width:54px;flex-shrink:0}
+.dr-info{flex:1;min-width:0}
+.dr-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dr-sub{font-size:10px;color:var(--muted)}
+.di-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;flex-shrink:0}
+.badge-ok{background:var(--green-mid);color:var(--green)}
+.badge-warn{background:var(--amber-mid);color:var(--amber)}
+.badge-err{background:var(--red-mid);color:var(--red)}
+
+/* CONTENT */
+.content{overflow-y:auto;padding:18px 20px}
+
+/* CARDS */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--white);border-radius:10px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.cv{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;line-height:1}
+.cl{font-size:10px;font-weight:600;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+.card-navy .cv{color:var(--navy)}
+.card-red .cv{color:var(--red)}
+.card-green .cv{color:var(--green)}
+.card-amber .cv{color:var(--amber)}
+
+/* TOOLBAR */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.sec-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:800;margin-right:4px}
+.sec-sub{color:var(--muted);font-size:12px}
+.spacer{flex:1}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:4px;border:none;border-radius:6px;padding:7px 12px;
+  font-family:'Outfit',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;white-space:nowrap}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-navy{background:var(--navy);color:#fff}.btn-navy:hover{background:#1e2d3f}
+.btn-accent{background:var(--accent);color:#fff}.btn-accent:hover{background:#c1121f}
+.btn-ghost{background:none;border:1.5px solid var(--line);color:var(--ink2)}.btn-ghost:hover{background:var(--bg)}
+.btn-ghost-white{background:none;border:1.5px solid rgba(255,255,255,.25);color:#fff}.btn-ghost-white:hover{background:rgba(255,255,255,.1)}
+.btn-red{background:var(--red-bg);color:var(--red)}.btn-red:hover{background:var(--red-mid)}
+.btn-green{background:var(--green-bg);color:var(--green)}.btn-green:hover{background:var(--green-mid)}
+.btn-cyan{background:var(--cyan-bg);color:var(--cyan)}.btn-cyan:hover{background:var(--cyan-mid)}
+.btn-sm{padding:4px 9px;font-size:11px;border-radius:5px}
+
+/* DOTACIONS EDITOR */
+.dot-editor{
+  background:var(--white);border-radius:9px;padding:10px 14px;
+  margin-bottom:14px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  box-shadow:0 1px 3px rgba(0,0,0,.06)
+}
+.dot-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+.num-input-row{display:flex;align-items:center;gap:4px}
+.ni{width:50px;border:1.5px solid var(--line);border-radius:5px;padding:3px 6px;
+  font-family:'Outfit',sans-serif;font-size:13px;text-align:center}
+.ni:focus{outline:none;border-color:var(--navy)}
+.ni-btn{background:var(--bg);border:1.5px solid var(--line);border-radius:4px;width:22px;height:22px;
+  cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;line-height:1}
+.ni-btn:hover{background:var(--line)}
+.bal-chip{
+  margin-left:auto;padding:5px 14px;border-radius:7px;
+  font-family:'Syne',sans-serif;font-weight:800;font-size:13px
+}
+.chip-ok{background:var(--green-bg);color:var(--green)}
+.chip-err{background:var(--red-bg);color:var(--red)}
+.chip-zero{background:var(--bg);color:var(--muted)}
+
+/* TABLE */
+.tbl-wrap{background:var(--white);border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{background:var(--navy)}
+thead th{color:rgba(255,255,255,.55);font-family:'Syne',sans-serif;font-size:9px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;padding:9px 10px;text-align:left;white-space:nowrap}
+th.r,td.r{text-align:right}
+th.c,td.c{text-align:center}
+tbody tr{border-bottom:1px solid var(--line);transition:background .08s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#fafaf8}
+tbody tr.row-red{background:#fff8f8}
+tbody tr.row-red:hover{background:#fff0f0}
+.sortable:hover{background:var(--navy-mid)!important;color:var(--white)}
+tbody tr.row-amber{background:var(--amber-bg)}
+tbody tr.row-cyan{background:var(--cyan-bg)}
+tbody tr.row-cyan:hover{background:#cffafe}
+tbody tr.row-teal{background:var(--teal-bg)}
+tfoot tr{background:var(--bg)}
+tfoot td{padding:8px 10px;font-family:'Syne',sans-serif;font-weight:700;font-size:12px}
+td{padding:7px 10px;vertical-align:middle}
+
+/* INLINE EDITABLE */
+.ie{
+  border:1.5px solid transparent;border-radius:4px;padding:2px 5px;
+  font-family:'Outfit',sans-serif;font-size:12px;background:transparent;
+  transition:all .12s;width:100%
+}
+.ie:hover{border-color:var(--line);background:var(--bg)}
+.ie:focus{outline:none;border-color:var(--navy);background:var(--white)}
+.ie-num{width:46px;text-align:right}
+.ie-sm{width:80px}
+.ie-obs{width:100%;min-width:100px}
+
+/* INLINE SELECT */
+.ie-sel{
+  border:1.5px solid transparent;border-radius:4px;padding:2px 4px;
+  font-family:'Outfit',sans-serif;font-size:12px;background:transparent;cursor:pointer;
+  transition:all .12s
+}
+.ie-sel:hover{border-color:var(--line);background:var(--bg)}
+.ie-sel:focus{outline:none;border-color:var(--navy);background:var(--white)}
+
+/* PILLS */
+.pill{display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.pill-materia{background:#dbeafe;color:#1d4ed8}
+.pill-coordinacio{background:var(--amber-mid);color:var(--amber)}
+.pill-dual{background:#ddd6fe;color:#7c3aed}
+.pill-biblioteca{background:#d1fae5;color:#065f46}
+.pill-projectes{background:#fce7f3;color:#9d174d}
+.pill-tutoria{background:var(--purple-bg);color:var(--purple)}
+.pill-altre{background:#f3e8ff;color:var(--purple)}
+.pill-dividit{background:var(--cyan-bg);color:var(--cyan);font-size:9px;margin-left:4px}
+
+/* TOTAL INDICATOR */
+.total-h{font-family:'Syne',sans-serif;font-weight:800;font-size:12px}
+.th-neg{color:var(--amber)}
+.th-pos{color:var(--ink)}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;
+  display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#fff;border-radius:14px;width:100%;max-width:560px;box-shadow:0 24px 64px rgba(0,0,0,.25);overflow:hidden}
+.mhdr{background:var(--navy);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+.mtitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:800}
+.mbody{padding:18px 20px;display:flex;flex-direction:column;gap:12px;max-height:70vh;overflow-y:auto}
+.mfoot{padding:0 20px 18px;display:flex;gap:8px;justify-content:flex-end}
+.cx{background:none;border:none;color:rgba(255,255,255,.5);font-size:20px;cursor:pointer;line-height:1}
+.cx:hover{color:#fff}
+.flbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);display:block;margin-bottom:4px}
+.finput{width:100%;border:1.5px solid var(--line);border-radius:6px;padding:8px 11px;font-family:'Outfit',sans-serif;font-size:13px}
+.finput:focus{outline:none;border-color:var(--navy)}
+.frow{display:grid;gap:10px}
+
+/* TRANSFER PREVIEW */
+.trf-box{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.trf-side{border-radius:8px;padding:10px 12px;text-align:center}
+.trf-from{background:var(--red-bg)}
+.trf-to{background:var(--green-bg)}
+.trf-arrow{font-size:20px;color:var(--muted);text-align:center}
+.trf-code{font-family:'Syne',sans-serif;font-weight:800;font-size:16px}
+.trf-info{font-size:11px;margin-top:2px;color:var(--muted)}
+.trf-impact{font-size:11px;font-weight:700;margin-top:3px}
+
+/* SPLIT MODAL */
+.split-info{background:var(--bg);border-radius:8px;padding:12px 14px}
+.split-title{font-weight:600;font-size:14px;margin-bottom:4px}
+.split-meta{font-size:11px;color:var(--muted)}
+.split-rows{display:flex;flex-direction:column;gap:8px}
+.split-row{
+  display:grid;grid-template-columns:80px 1fr 70px;gap:10px;align-items:center;
+  background:var(--white);border:1.5px solid var(--line);border-radius:8px;padding:10px 12px
+}
+.split-row.assigned{border-color:var(--green);background:var(--green-bg)}
+.split-grup{font-family:'Syne',sans-serif;font-weight:800;font-size:14px}
+.split-sel{width:100%}
+.split-h{font-size:12px;color:var(--muted);text-align:right}
+.split-summary{
+  background:var(--blue-bg);border-radius:8px;padding:10px 14px;
+  display:flex;justify-content:space-between;align-items:center
+}
+.split-summary-title{font-size:11px;color:var(--muted)}
+.split-summary-val{font-family:'Syne',sans-serif;font-weight:800;color:var(--blue)}
+
+/* MATRIX TABLE */
+.matrix-wrap{overflow-x:auto}
+.matrix{font-size:11px}
+.matrix th{padding:6px 8px;position:sticky;top:0;z-index:1}
+.matrix td{padding:5px 8px;text-align:center}
+.matrix .curs-cell{
+  text-align:left;font-weight:600;position:sticky;left:0;
+  background:var(--white);z-index:1;min-width:100px
+}
+.matrix .dept-hdr{writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);
+  min-width:32px;max-width:32px;height:80px;padding:4px 2px}
+.matrix .h-cell{font-family:'Syne',sans-serif;font-weight:700}
+.matrix .h-cell.has-h{background:var(--blue-bg);color:var(--blue)}
+.matrix .h-cell.zero{color:var(--line)}
+.matrix .total-row{background:var(--bg);font-weight:700}
+.matrix .total-col{background:var(--bg);font-weight:700}
+
+/* GLOBAL */
+.g-err{background:var(--red-bg)}
+.g-ok{background:var(--green-bg)}
+.disc{font-family:'Syne',sans-serif;font-weight:800;font-size:12px}
+.disc-pos{color:var(--green)}.disc-neg{color:var(--red)}.disc-zero{color:var(--muted)}
+
+/* GRUPS ESPECIALS */
+.ge-section{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+.ge-row{
+  display:flex;align-items:center;gap:6px;padding:6px 8px;
+  border-radius:7px;cursor:pointer;transition:all .12s;margin-bottom:1px;
+  border:1.5px solid transparent
+}
+.ge-row:hover{background:var(--bg)}
+.ge-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.ge-name{font-size:12px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ge-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;opacity:0;transition:opacity .12s}
+.ge-row:hover .ge-del{opacity:1}
+.ge-del:hover{color:var(--red)}
+.ge-add-btn{
+  width:100%;background:none;border:1.5px dashed var(--line);border-radius:7px;
+  padding:6px 8px;font-family:'Outfit',sans-serif;font-size:11px;color:var(--muted);
+  cursor:pointer;text-align:left;margin-top:4px;transition:all .12s
+}
+.ge-add-btn:hover{border-color:var(--navy);color:var(--navy);background:var(--bg)}
+.ge-view-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.ge-color-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+.color-picker-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.color-swatch{width:26px;height:26px;border-radius:6px;cursor:pointer;border:2.5px solid transparent;transition:all .12s}
+.color-swatch.sel{border-color:var(--ink);transform:scale(1.15)}
+
+/* EMPTY */
+.empty{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+
+/* FILTER BAR */
+.filter-bar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar label{font-size:11px;color:var(--muted)}
+.filter-bar select{
+  border:1.5px solid var(--line);border-radius:5px;padding:5px 10px;
+  font-family:'Outfit',sans-serif;font-size:12px;background:var(--white)
+}
+.filter-bar select:focus{outline:none;border-color:var(--navy)}
+
+/* PROFESSORS */
+.profes-box{
+  background:var(--white);border-radius:9px;padding:12px 14px;
+  margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)
+}
+.profes-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.profes-title{font-size:12px;font-weight:600;color:var(--ink)}
+.profes-input{
+  width:100%;border:1.5px solid var(--line);border-radius:6px;padding:8px 10px;
+  font-family:'Outfit',sans-serif;font-size:12px;resize:vertical;min-height:40px;
+  margin-bottom:8px
+}
+.profes-input:focus{outline:none;border-color:var(--navy)}
+.profes-list{display:flex;flex-wrap:wrap;gap:6px}
+.profes-chip{
+  background:var(--purple-bg);color:var(--purple);
+  padding:3px 8px;border-radius:12px;font-size:11px;font-weight:500
+}
+
+/* PRINT */
+@media print{
+  .topbar,.sidebar,.no-print{display:none!important}
+  .main{grid-template-columns:1fr;height:auto;overflow:visible}
+  .content{overflow:visible;height:auto;padding:0}
+  .tbl-wrap{box-shadow:none;break-inside:avoid}
+  body{font-size:10px}
+  table{font-size:10px}
+  thead{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  .cards{break-inside:avoid}
+  .dot-editor{break-inside:avoid}
+  .ie,.ie-sel{border:none!important;background:transparent!important}
+  .matrix .curs-cell{position:static}
+  .matrix th{position:static}
+}
+`;
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [depts, setDepts]   = useState(DEPTS_BASE);
+  const [concs, setConcs]   = useState(CONCS_BASE);
+  const [grupsEspecials, setGrupsEspecials] = useState(GRUPS_ESPECIALS_BASE);
+  const [actDept, setActDept] = useState("CAT");
+  const [view, setView]     = useState("dept");
+  const [modal, setModal]   = useState(null);
+  const [form, setForm]     = useState({});
+  const [tfrId, setTfrId]   = useState(null);
+  const [tfrTo, setTfrTo]   = useState("");
+  const [scenarios, setScenarios] = useState([]);
+  
+  // Split modal state
+  const [splitId, setSplitId] = useState(null);
+  const [splitAssign, setSplitAssign] = useState({});
+  
+  // Curs view filter
+  const [cursFilter, setCursFilter] = useState("all");
+  const [selectedNivell, setSelectedNivell] = useState("1r ESO");
+  
+  // Scenario modal state
+  const [scenarioName, setScenarioName] = useState("");
+  
+  // Grup especial form
+  const [grupEspecialForm, setGrupEspecialForm] = useState({nom:"", color:"#7c3aed"});
+
+  // Sorting state for dept table
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+
+  // Tutories i coordinacions de nivell
+  // tutories: { "1r ESO A": "CAT", "1r ESO B": "MATES", ... }
+  // coordNivell: { "1r ESO": "CAT", "2n ESO": "MATES", ... }
+  const [tutories, setTutories] = useState({});
+  const [coordNivell, setCoordNivell] = useState({});
+
+  // Derived: all available CURSOS (base + grups especials as course names)
+  const CURSOS = useMemo(() => [
+    ...CURSOS_BASE.filter(c => c !== "—"),
+    ...grupsEspecials.map(g => g.nom),
+    "—"
+  ], [grupsEspecials]);
+  
+  const NIVELLS = useMemo(() => [
+    ...NIVELLS_BASE,
+    ...grupsEspecials.map(g => g.nom)
+  ], [grupsEspecials]);
+
+  // Derived: all groups per nivell (from concs data)
+  const grupsPerNivell = useMemo(() => {
+    const result = {};
+    NIVELLS_BASE.forEach(nivell => {
+      const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio");
+      const maxGrups = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups)) : 3;
+      result[nivell] = Array.from({length: maxGrups}, (_, i) => `${nivell} ${LLETRES_GRUP[i] || i+1}`);
+    });
+    return result;
+  }, [concs]);
+
+  // ── Persist ──
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get("grc5");
+        if (r) {
+          const s = JSON.parse(r.value);
+          if (s.depts?.length) setDepts(s.depts);
+          if (s.concs?.length) setConcs(s.concs);
+          if (s.scenarios)     setScenarios(s.scenarios);
+          if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
+          if (s.tutories)      setTutories(s.tutories);
+          if (s.coordNivell)   setCoordNivell(s.coordNivell);
+        }
+      } catch(_) {}
+    })();
+  }, []);
+
+  const save = useCallback((d, c, sc, ge, tut, coord) => {
+    window.storage.set("grc5", JSON.stringify({depts:d,concs:c,scenarios:sc,grupsEspecials:ge,tutories:tut,coordNivell:coord})).catch(()=>{});
+  }, []);
+
+  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials, tutories, coordNivell); };
+  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials, tutories, coordNivell); };
+  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials, tutories, coordNivell); };
+  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge, tutories, coordNivell); };
+  const upTut   = tut => { setTutories(tut); save(depts, concs, scenarios, grupsEspecials, tut, coordNivell); };
+  const upCoord = coord => { setCoordNivell(coord); save(depts, concs, scenarios, grupsEspecials, tutories, coord); };
+
+  // ── Sorting ──
+  const handleSort = col => {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  };
+  const sortedConcs = useMemo(() => {
+    if (!sortCol || !actStats) return actStats?.concs || [];
+    return [...actStats.concs].sort((a, b) => {
+      let va, vb;
+      if (sortCol === "nom")      { va = a.nom; vb = b.nom; }
+      else if (sortCol === "curs"){ va = a.curs; vb = b.curs; }
+      else if (sortCol === "tipus"){ va = a.tipus; vb = b.tipus; }
+      else if (sortCol === "grups"){ va = a.grups; vb = b.grups; }
+      else if (sortCol === "hPerGrup"){ va = a.hPerGrup; vb = b.hPerGrup; }
+      else if (sortCol === "hDesdobl"){ va = a.hDesdobl||0; vb = b.hDesdobl||0; }
+      else if (sortCol === "total"){ va = totalHores(a); vb = totalHores(b); }
+      else if (sortCol === "obs") { va = a.obs; vb = b.obs; }
+      if (typeof va === "number") return sortDir === "asc" ? va-vb : vb-va;
+      return sortDir === "asc" ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+  }, [actStats, sortCol, sortDir]);
+
+  const SortTh = ({col, children, className=""}) => {
+    const active = sortCol === col;
+    const arrow = active ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+    return (
+      <th className={`sortable ${className}`} onClick={()=>handleSort(col)}
+        style={{cursor:"pointer", userSelect:"none", whiteSpace:"nowrap"}}>
+        {children}{arrow && <span style={{fontSize:9,color:"var(--purple)"}}>{arrow}</span>}
+      </th>
+    );
+  };
+
+  // ── Computed ──
+  const stats = useMemo(() =>
+    Object.fromEntries(depts.map(d => [d.id, calcDept(d, concs)]))
+  , [depts, concs]);
+
+  const actDeptObj = depts.find(d => d.id === actDept);
+  const actStats   = actDeptObj ? stats[actDept] : null;
+  
+  // ── Matrix data (Curs view) ──
+  const matrixData = useMemo(() => {
+    // Get all unique courses (excluding "—" and "Transversal")
+    const validConcs = concs.filter(c => c.tipus !== "coordinacio" && c.curs !== "—");
+    
+    // Group by base course
+    const cursSet = new Set();
+    validConcs.forEach(c => cursSet.add(c.curs));
+    
+    // Sort courses logically
+    const cursOrder = ["1r ESO", "2n ESO", "3r ESO", "4t ESO", "1r BAT", "2n BAT", "FP Bàsica", "CFGM", "CFGS", "Transversal"];
+    const allCursos = Array.from(cursSet).sort((a, b) => {
+      const baseA = getBaseCurs(a);
+      const baseB = getBaseCurs(b);
+      const idxA = cursOrder.indexOf(baseA);
+      const idxB = cursOrder.indexOf(baseB);
+      if (idxA !== idxB) return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+      return a.localeCompare(b);
+    });
+    
+    // Build matrix: { curs: { deptId: totalHores } }
+    const matrix = {};
+    allCursos.forEach(curs => {
+      matrix[curs] = {};
+      depts.forEach(d => { matrix[curs][d.id] = 0; });
+    });
+    
+    validConcs.forEach(c => {
+      if (matrix[c.curs]) {
+        // hPerGrup is per group, so total = grups * hPerGrup
+        // But for matrix view, we want hours per group (what a single group receives)
+        matrix[c.curs][c.dept] += c.hPerGrup;
+      }
+    });
+    
+    // Calculate totals
+    const totByCurs = {};
+    const totByDept = {};
+    depts.forEach(d => { totByDept[d.id] = 0; });
+    
+    allCursos.forEach(curs => {
+      totByCurs[curs] = 0;
+      depts.forEach(d => {
+        totByCurs[curs] += matrix[curs][d.id];
+        totByDept[d.id] += matrix[curs][d.id];
+      });
+    });
+    
+    return { cursos: allCursos, matrix, totByCurs, totByDept };
+  }, [concs, depts]);
+  
+  // Filter cursos for matrix view
+  const filteredCursos = useMemo(() => {
+    if (cursFilter === "all") return matrixData.cursos;
+    if (cursFilter === "eso") return matrixData.cursos.filter(c => c.includes("ESO"));
+    if (cursFilter === "bat") return matrixData.cursos.filter(c => c.includes("BAT"));
+    if (cursFilter === "fp") return matrixData.cursos.filter(c => 
+      c.includes("CFGM") || c.includes("CFGS") || c.includes("FP"));
+    if (cursFilter === "especials") return matrixData.cursos.filter(c => 
+      grupsEspecials.some(ge => ge.nom === c));
+    return matrixData.cursos;
+  }, [matrixData.cursos, cursFilter, grupsEspecials]);
+  
+  // ── Groups data for selected level ──
+  const grupsData = useMemo(() => {
+    if (!selectedNivell) return null;
+    
+    // Find all concepts for this level (including split ones)
+    const validConcs = concs.filter(c => 
+      c.tipus !== "coordinacio" && 
+      c.curs !== "—" && 
+      c.curs !== "Transversal" &&
+      (c.curs === selectedNivell || c.curs.startsWith(selectedNivell + " "))
+    );
+    
+    if (validConcs.length === 0) return null;
+    
+    // Determine number of groups for this level
+    // Look at the max groups for non-split concepts
+    const baseConcs = validConcs.filter(c => c.curs === selectedNivell);
+    const maxGrups = baseConcs.length > 0 
+      ? Math.max(...baseConcs.map(c => c.grups))
+      : 3; // default to 3 if no base concepts
+    
+    // Build data for each group
+    const grups = [];
+    for (let i = 0; i < maxGrups; i++) {
+      const grupLetter = LLETRES_GRUP[i] || String(i + 1);
+      const grupName = `${selectedNivell} ${grupLetter}`;
+      
+      // Initialize hours per department
+      const horesPerDept = {};
+      depts.forEach(d => { horesPerDept[d.id] = 0; });
+      
+      // For each concept, check if it applies to this group
+      validConcs.forEach(c => {
+        const cursBase = getBaseCurs(c.curs);
+        if (cursBase !== selectedNivell) return;
+        
+        // Check if this concept applies to this specific group
+        if (c.curs === selectedNivell) {
+          // Non-split concept - applies to all groups up to c.grups
+          if (i < c.grups) {
+            horesPerDept[c.dept] += c.hPerGrup;
+          }
+        } else {
+          // Split concept - check if this group is included
+          const cursGrup = c.curs.replace(selectedNivell, "").trim();
+          // Could be "A" or "(A, B)" format
+          if (cursGrup === grupLetter || 
+              cursGrup.includes(grupLetter + ",") || 
+              cursGrup.includes(", " + grupLetter) ||
+              cursGrup === `(${grupLetter})`) {
+            horesPerDept[c.dept] += c.hPerGrup;
+          }
+        }
+      });
+      
+      // Calculate total for this group
+      const total = Object.values(horesPerDept).reduce((a, b) => a + b, 0);
+      
+      grups.push({
+        nom: grupName,
+        lletra: grupLetter,
+        horesPerDept,
+        total
+      });
+    }
+    
+    // Calculate totals per department across all groups
+    const totByDept = {};
+    depts.forEach(d => { 
+      totByDept[d.id] = grups.reduce((sum, g) => sum + g.horesPerDept[d.id], 0);
+    });
+    
+    return { grups, totByDept, nivell: selectedNivell };
+  }, [concs, depts, selectedNivell]);
+
+  // ── Inline edit helpers ──
+  const updConc = (id, field, val) => upConcs(concs.map(c => c.id === id ? {...c, [field]: val} : c));
+  const updNum  = (id, field, val) => updConc(id, field, Number(val) || 0);
+
+  // ── Actions ──
+  const delConc   = id => upConcs(concs.filter(c => c.id !== id));
+  const upDot     = (deptId, v) => upDepts(depts.map(d => d.id===deptId ? {...d,dotacions:Math.max(0,Number(v))} : d));
+  const upHperDot = (deptId, v) => upDepts(depts.map(d => d.id===deptId ? {...d,hPerDot:Math.max(1,Number(v))} : d));
+  const upProfes  = (deptId, v) => upDepts(depts.map(d => d.id===deptId ? {...d,profes:v} : d));
+
+  function openAdd() {
+    setForm({dept:actDept,nom:"",curs:"1r ESO",tipus:"materia",grups:1,hPerGrup:3,hDesdobl:0,obs:""});
+    setModal("add");
+  }
+  function saveAdd() {
+    const c = {...form, id:uid(), grups:Number(form.grups)||1, hPerGrup:Number(form.hPerGrup)||0, hDesdobl:Number(form.hDesdobl)||0, tipusAlt:form.tipusAlt||""};
+    upConcs([...concs, c]);
+    setModal(null);
+  }
+  function openTfr(id) { setTfrId(id); setTfrTo(""); setModal("tfr"); }
+  function doTfr() {
+    upConcs(concs.map(c => c.id===tfrId ? {...c, dept:tfrTo} : c));
+    setModal(null);
+  }
+  
+  // ── Split (dividir per grups) ──
+  function openSplit(id) {
+    const c = concs.find(x => x.id === id);
+    if (!c || c.grups < 2) return;
+    setSplitId(id);
+    const init = {};
+    for (let i = 0; i < c.grups; i++) {
+      init[i] = c.dept;
+    }
+    setSplitAssign(init);
+    setModal("split");
+  }
+  
+  function doSplit() {
+    const c = concs.find(x => x.id === splitId);
+    if (!c) return;
+    
+    const byDept = {};
+    for (let i = 0; i < c.grups; i++) {
+      const deptId = splitAssign[i];
+      if (!byDept[deptId]) byDept[deptId] = [];
+      byDept[deptId].push(i);
+    }
+    
+    const deptKeys = Object.keys(byDept);
+    if (deptKeys.length === 1) {
+      upConcs(concs.map(x => x.id === splitId ? {...x, dept: deptKeys[0]} : x));
+      setModal(null);
+      return;
+    }
+    
+    const newConcs = concs.filter(x => x.id !== splitId);
+    
+    for (const [deptId, grupIndexes] of Object.entries(byDept)) {
+      const grupLabels = grupIndexes.map(i => LLETRES_GRUP[i] || (i+1)).join(", ");
+      const cursWithGrup = grupIndexes.length === 1 
+        ? `${c.curs} ${LLETRES_GRUP[grupIndexes[0]] || grupIndexes[0]+1}`
+        : `${c.curs} (${grupLabels})`;
+      
+      newConcs.push({
+        id: uid(),
+        dept: deptId,
+        nom: c.nom,
+        curs: cursWithGrup,
+        tipus: c.tipus,
+        grups: grupIndexes.length,
+        hPerGrup: c.hPerGrup,
+        obs: c.obs ? `${c.obs} · Dividit` : "Dividit",
+        _splitFrom: splitId
+      });
+    }
+    
+    upConcs(newConcs);
+    setModal(null);
+  }
+
+  function openSaveScenario() {
+    setScenarioName("");
+    setModal("saveScenario");
+  }
+  
+  function saveScenario() {
+    if (!scenarioName.trim()) return;
+    const sc = {id:uid(), nom: scenarioName.trim(), data:new Date().toLocaleDateString("ca-ES"),
+      depts:JSON.parse(JSON.stringify(depts)), concs:JSON.parse(JSON.stringify(concs))};
+    upSc([sc, ...scenarios]);
+    setModal(null);
+    setScenarioName("");
+  }
+  function loadSc(sc) { setDepts(sc.depts); setConcs(sc.concs); save(sc.depts, sc.concs, scenarios, grupsEspecials); }
+  function delSc(id)  { upSc(scenarios.filter(s => s.id !== id)); }
+  
+  // ── Grups Especials ──
+  function openAddGrupEspecial() {
+    setGrupEspecialForm({nom:"", color:"#7c3aed"});
+    setModal("addGrupEspecial");
+  }
+  function saveGrupEspecial() {
+    if (!grupEspecialForm.nom.trim()) return;
+    const ge = [...grupsEspecials, {id:uid(), nom:grupEspecialForm.nom.trim(), color:grupEspecialForm.color}];
+    upGE(ge);
+    setModal(null);
+  }
+  function delGrupEspecial(id) {
+    const ge = grupsEspecials.find(g => g.id === id);
+    if (!ge) return;
+    // Remove related concs too
+    const newConcs = concs.filter(c => c.curs !== ge.nom);
+    upConcs(newConcs);
+    upGE(grupsEspecials.filter(g => g.id !== id));
+  }
+
+  // ── Render ──
+  const pillCls = t => `pill pill-${t}`;
+  const tipusLbl = (t, tipusAlt) => t === "altre" && tipusAlt ? tipusAlt : (TIPUS_OPTS.find(o=>o.v===t)?.l || t);
+
+  const totalConflicts = depts.filter(d => stats[d.id].balanc < 0).length;
+  const totDisp = depts.reduce((s,d)=>s+stats[d.id].disp, 0);
+  const totNec  = depts.reduce((s,d)=>s+stats[d.id].nec, 0);
+
+  return (
+    <>
+      <style>{CSS}</style>
+      <div className="app">
+
+        {/* TOPBAR */}
+        <div className="topbar">
+          <div className="topbar-logo">GRC<em>·</em>26/27</div>
+          <div className="tab-wrap">
+            <button className={`tab${view==="dept"?" on":""}`} onClick={()=>setView("dept")}>Per Departament</button>
+            <button className={`tab${view==="curs"?" on":""}`} onClick={()=>setView("curs")}>Per Curs</button>
+            <button className={`tab${view==="tutories"?" on":""}`} onClick={()=>setView("tutories")}>Tutories & Coord.</button>
+            <button className={`tab${view==="global"?" on":""}`} onClick={()=>setView("global")}>Resum Global</button>
+            <button className={`tab${view==="scenarios"?" on":""}`} onClick={()=>setView("scenarios")}>Escenaris</button>
+          </div>
+          <div className="topbar-right no-print">
+            <button className="btn btn-ghost-white btn-sm" onClick={openSaveScenario}>💾 Desa</button>
+            <button className="btn btn-ghost-white btn-sm" onClick={()=>window.print()}>🖨 PDF</button>
+          </div>
+        </div>
+
+        <div className="main">
+          {/* SIDEBAR */}
+          <div className="sidebar">
+            <div className="s-title">Departaments</div>
+            {depts.map(d => {
+              const s = stats[d.id];
+              return (
+                <div key={d.id} className={`dept-row${actDept===d.id&&view==="dept"?" on":""}`}
+                  onClick={()=>{setActDept(d.id);setView("dept")}}>
+                  <div className="dr-code">{d.id}</div>
+                  <div className="dr-info">
+                    <div className="dr-name">{d.nom}</div>
+                    <div className="dr-sub">{d.dotacions}dot · {s.disp}h disp · {s.concs.length} conceptes</div>
+                  </div>
+                  <div className={`di-badge ${clsBadge(s.balanc)}`}>{sign(s.balanc)}h</div>
+                </div>
+              );
+            })}
+            
+            {/* GRUPS ESPECIALS */}
+            <div className="ge-section">
+              <div className="s-title">Grups Especials</div>
+              {grupsEspecials.map(ge => {
+                const geConcs = concs.filter(c => c.curs === ge.nom);
+                const totalH = geConcs.reduce((s, c) => s + totalHores(c), 0);
+                return (
+                  <div key={ge.id} className="ge-row"
+                    onClick={()=>{setSelectedNivell(ge.nom);setView("curs")}}>
+                    <div className="ge-dot" style={{background:ge.color}}/>
+                    <div className="ge-name">{ge.nom}</div>
+                    <div style={{fontSize:10,color:"var(--muted)",flexShrink:0}}>{totalH}h</div>
+                    <button className="ge-del no-print" onClick={e=>{e.stopPropagation();delGrupEspecial(ge.id)}} title="Eliminar grup">×</button>
+                  </div>
+                );
+              })}
+              <button className="ge-add-btn no-print" onClick={openAddGrupEspecial}>+ Nou grup especial</button>
+            </div>
+          </div>
+
+          {/* CONTENT */}
+          <div className="content">
+
+            {/* ── DEPT VIEW ── */}
+            {view==="dept" && actDeptObj && actStats && (
+              <>
+                <div className="toolbar">
+                  <div>
+                    <span className="sec-title">{actDept}</span>
+                    <span className="sec-sub">— {actDeptObj.nom}</span>
+                  </div>
+                  <div className="spacer"/>
+                  <button className="btn btn-navy btn-sm no-print" onClick={openAdd}>+ Afegir concepte</button>
+                </div>
+
+                {/* Cards */}
+                <div className="cards">
+                  <div className="card card-navy"><div className="cv">{actDeptObj.dotacions}</div><div className="cl">Dotacions</div></div>
+                  <div className="card"><div className="cv">{actDeptObj.hPerDot}h</div><div className="cl">H/Dotació</div></div>
+                  <div className="card"><div className="cv">{actStats.disp}h</div><div className="cl">H. Disponibles</div></div>
+                  <div className="card"><div className="cv">{actStats.nec}h</div><div className="cl">H. Necessàries</div></div>
+                  <div className={`card ${actStats.balanc===0?"":actStats.balanc>0?"card-green":"card-red"}`}>
+                    <div className="cv">{sign(actStats.balanc)}h</div><div className="cl">Balanç</div>
+                  </div>
+                </div>
+
+                {/* Dotacions editor */}
+                <div className="dot-editor">
+                  <div className="dot-lbl">Ajustar dotacions</div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:"var(--muted)"}}>Dotacions:</span>
+                    <div className="num-input-row">
+                      <button className="ni-btn" onClick={()=>upDot(actDept,actDeptObj.dotacions-1)}>−</button>
+                      <input className="ni" type="number" value={actDeptObj.dotacions}
+                        onChange={e=>upDot(actDept,e.target.value)}/>
+                      <button className="ni-btn" onClick={()=>upDot(actDept,actDeptObj.dotacions+1)}>+</button>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:"var(--muted)"}}>H/Dotació:</span>
+                    <div className="num-input-row">
+                      <input className="ni" type="number" value={actDeptObj.hPerDot}
+                        onChange={e=>upHperDot(actDept,e.target.value)}/>
+                    </div>
+                  </div>
+                  <div className={`bal-chip ${clsBal(actStats.balanc)}`}>
+                    {actStats.balanc===0 ? "= Equilibri" : actStats.balanc>0 ? `✓ Superàvit ${sign(actStats.balanc)}h` : `⚠ Dèficit ${actStats.balanc}h`}
+                  </div>
+                </div>
+                
+                {/* Professors */}
+                <div className="profes-box">
+                  <div className="profes-header">
+                    <div className="profes-title">👥 Professorat ({(actDeptObj.profes || "").split(",").filter(p => p.trim()).length})</div>
+                  </div>
+                  <textarea 
+                    className="profes-input"
+                    value={actDeptObj.profes || ""}
+                    onChange={e => upProfes(actDept, e.target.value)}
+                    placeholder="Escriu els noms dels professors separats per comes..."
+                    rows={2}
+                  />
+                  <div className="profes-list">
+                    {(actDeptObj.profes || "").split(",").filter(p => p.trim()).map((p, i) => (
+                      <span key={i} className="profes-chip">{p.trim()}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conceptes table */}
+                <div className="tbl-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <SortTh col="nom" style={{width:"20%"}}>Nom del concepte</SortTh>
+                        <SortTh col="curs" style={{width:"9%"}}>Curs</SortTh>
+                        <SortTh col="tipus" style={{width:"8%"}}>Tipus</SortTh>
+                        <SortTh col="grups" className="r" style={{width:"5%"}}>Grups</SortTh>
+                        <SortTh col="hPerGrup" className="r" style={{width:"6%"}}>H/Grup</SortTh>
+                        <SortTh col="hDesdobl" className="r" style={{width:"6%"}} title="Hores de desdoblament per grup">H desdobl.</SortTh>
+                        <SortTh col="total" className="r" style={{width:"7%"}}>Total dept.</SortTh>
+                        <SortTh col="obs" style={{width:"16%"}}>Observacions</SortTh>
+                        <th className="no-print" style={{width:"23%"}}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actStats.concs.length===0 && (
+                        <tr><td colSpan={9} className="empty">Cap concepte. Clica "+ Afegir concepte" per començar.</td></tr>
+                      )}
+                      {sortedConcs.map(c => {
+                        const tot = totalHores(c);
+                        const hasDesdobl = (c.hDesdobl || 0) > 0;
+                        const isRed = c.tipus === "coordinacio";
+                        const isSplit = c.obs?.includes("Dividit");
+                        return (
+                          <tr key={c.id} className={isRed ? "row-amber" : isSplit ? "row-cyan" : ""}>
+                            <td>
+                              <input className="ie" type="text" value={c.nom}
+                                onChange={e=>updConc(c.id,"nom",e.target.value)}/>
+                            </td>
+                            <td>
+                              <input className="ie ie-sm" type="text" value={c.curs}
+                                onChange={e=>updConc(c.id,"curs",e.target.value)}
+                                list={`cursos-${c.id}`}/>
+                              <datalist id={`cursos-${c.id}`}>
+                                {CURSOS_BASE.map(cs=><option key={cs} value={cs}/>)}
+                                {grupsEspecials.map(ge=><option key={ge.id} value={ge.nom}/>)}
+                              </datalist>
+                            </td>
+                            <td>
+                              <select className="ie-sel" value={TIPUS_OPTS.find(o=>o.v===c.tipus) ? c.tipus : "altre"}
+                                onChange={e=>updConc(c.id,"tipus",e.target.value)}>
+                                {TIPUS_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                              </select>
+                              {(!TIPUS_OPTS.find(o=>o.v===c.tipus) || c.tipus==="altre") && (
+                                <input className="ie" type="text"
+                                  style={{marginTop:3,fontSize:11}}
+                                  placeholder="Especifica..."
+                                  value={c.tipusAlt||""}
+                                  onChange={e=>updConc(c.id,"tipusAlt",e.target.value)}/>
+                              )}
+                            </td>
+                            <td className="r">
+                              <input className="ie ie-num" type="number"
+                                value={c.grups} min="1"
+                                onChange={e=>updNum(c.id,"grups",e.target.value)}/>
+                            </td>
+                            <td className="r">
+                              <input className="ie ie-num" type="number"
+                                value={c.hPerGrup}
+                                onChange={e=>updNum(c.id,"hPerGrup",e.target.value)}/>
+                            </td>
+                            <td className="r">
+                              <input className="ie ie-num" type="number" min="0"
+                                value={c.hDesdobl || 0}
+                                onChange={e=>updNum(c.id,"hDesdobl",e.target.value)}
+                                style={hasDesdobl ? {color:"var(--purple)",fontWeight:700} : {color:"var(--muted)"}}
+                                title="Hores desdoblades per grup"/>
+                            </td>
+                            <td className="r">
+                              <span className={`total-h ${tot<0?"th-neg":"th-pos"}`}>
+                                {tot}h
+                                {hasDesdobl && <span style={{fontSize:9,color:"var(--purple)",display:"block",lineHeight:1}}>({c.hPerGrup}+{c.hDesdobl})×{c.grups}</span>}
+                              </span>
+                            </td>
+                            <td>
+                              <input className="ie ie-obs" type="text" value={c.obs}
+                                placeholder="—"
+                                onChange={e=>updConc(c.id,"obs",e.target.value)}/>
+                            </td>
+                            <td className="no-print">
+                              <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                                {c.grups >= 2 && c.tipus !== "coordinacio" && (
+                                  <button className="btn btn-cyan btn-sm" onClick={()=>openSplit(c.id)}
+                                    title="Dividir entre departaments">
+                                    ✂ Dividir
+                                  </button>
+                                )}
+                                <button className="btn btn-ghost btn-sm" onClick={()=>openTfr(c.id)}
+                                  title="Moure a un altre departament">⇄</button>
+                                <button className="btn btn-red btn-sm" onClick={()=>delConc(c.id)}
+                                  title="Eliminar">×</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {actStats.concs.length > 0 && (
+                      <tfoot>
+                        <tr>
+                          <td colSpan={6}>Total departament</td>
+                          <td className="r">{actStats.nec}h</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── CURS VIEW (MATRIX) ── */}
+            {view==="curs" && (
+              <>
+                <div className="toolbar">
+                  <span className="sec-title">Matriu Curs × Departament</span>
+                  <span className="sec-sub">— Hores per grup que imparteix cada departament</span>
+                </div>
+                
+                <div className="filter-bar">
+                  <label>Filtrar per etapa:</label>
+                  <select value={cursFilter} onChange={e => setCursFilter(e.target.value)}>
+                    <option value="all">Tots els cursos</option>
+                    <option value="eso">Només ESO</option>
+                    <option value="bat">Només Batxillerat</option>
+                    <option value="fp">Només FP</option>
+                    {grupsEspecials.length > 0 && <option value="especials">Grups especials</option>}
+                  </select>
+                </div>
+                
+                <div className="tbl-wrap matrix-wrap">
+                  <table className="matrix">
+                    <thead>
+                      <tr>
+                        <th className="curs-cell">Curs</th>
+                        {depts.map(d => (
+                          <th key={d.id} className="dept-hdr" title={d.nom}>{d.id}</th>
+                        ))}
+                        <th className="r">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCursos.map(curs => {
+                        const geInfo = grupsEspecials.find(g => g.nom === curs);
+                        return (
+                        <tr key={curs}>
+                          <td className="curs-cell">
+                            {geInfo && <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:geInfo.color,marginRight:5,verticalAlign:"middle"}}/>}
+                            {curs}
+                            {geInfo && <span style={{fontSize:9,background:geInfo.color+"22",color:geInfo.color,borderRadius:3,padding:"1px 4px",marginLeft:5,fontWeight:600}}>especial</span>}
+                          </td>
+                          {depts.map(d => {
+                            const h = matrixData.matrix[curs]?.[d.id] || 0;
+                            return (
+                              <td key={d.id} className={`h-cell ${h > 0 ? "has-h" : "zero"}`}>
+                                {h > 0 ? h : "—"}
+                              </td>
+                            );
+                          })}
+                          <td className="r total-col">{matrixData.totByCurs[curs] || 0}h</td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="total-row">
+                        <td className="curs-cell">Total dept.</td>
+                        {depts.map(d => (
+                          <td key={d.id} className="c">{matrixData.totByDept[d.id] || 0}h</td>
+                        ))}
+                        <td className="r">
+                          {Object.values(matrixData.totByDept).reduce((a,b) => a+b, 0)}h
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                
+                <div style={{marginTop:16,padding:"12px 16px",background:"var(--white)",borderRadius:8,fontSize:12,color:"var(--muted)"}}>
+                  <strong>💡 Com interpretar:</strong> Cada cel·la mostra les hores setmanals que un departament 
+                  imparteix <em>per grup</em> en aquell curs. Per exemple, si Català té "3" a 1r ESO, vol dir que 
+                  cada grup de 1r ESO rep 3h setmanals de matèries del departament de Català.
+                </div>
+                
+                {/* GRUPS PER NIVELL */}
+                <div style={{marginTop:24}}>
+                  <div className="toolbar">
+                    <span className="sec-title">Detall per Grup</span>
+                    <span className="sec-sub">— Hores que rep cada grup individual</span>
+                  </div>
+                  
+                  <div className="filter-bar">
+                    <label>Selecciona nivell:</label>
+                    <select value={selectedNivell} onChange={e => setSelectedNivell(e.target.value)}>
+                      <optgroup label="Cursos regulars">
+                        {NIVELLS_BASE.map(n => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </optgroup>
+                      {grupsEspecials.length > 0 && (
+                        <optgroup label="Grups especials">
+                          {grupsEspecials.map(ge => (
+                            <option key={ge.id} value={ge.nom}>{ge.nom}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+                  
+                  {grupsData && grupsData.grups.length > 0 ? (
+                    <>
+                    {(() => {
+                      const geInfo = grupsEspecials.find(g => g.nom === selectedNivell);
+                      if (!geInfo) return null;
+                      return (
+                        <div style={{
+                          background: geInfo.color+"15", border:`1.5px solid ${geInfo.color}33`,
+                          borderRadius:8, padding:"10px 14px", marginBottom:12,
+                          display:"flex", alignItems:"center", gap:10
+                        }}>
+                          <div style={{width:12,height:12,borderRadius:"50%",background:geInfo.color,flexShrink:0}}/>
+                          <div>
+                            <strong style={{color:geInfo.color,fontFamily:"'Syne',sans-serif"}}>{geInfo.nom}</strong>
+                            <span style={{fontSize:11,color:"var(--muted)",marginLeft:8}}>Grup especial</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="tbl-wrap matrix-wrap">
+                      <table className="matrix">
+                        <thead>
+                          <tr>
+                            <th className="curs-cell">Grup</th>
+                            {depts.map(d => (
+                              <th key={d.id} className="dept-hdr" title={d.nom}>{d.id}</th>
+                            ))}
+                            <th className="r">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {grupsData.grups.map(g => (
+                            <tr key={g.nom}>
+                              <td className="curs-cell">
+                                <strong>{g.nom}</strong>
+                              </td>
+                              {depts.map(d => {
+                                const h = g.horesPerDept[d.id] || 0;
+                                return (
+                                  <td key={d.id} className={`h-cell ${h > 0 ? "has-h" : "zero"}`}>
+                                    {h > 0 ? h : "—"}
+                                  </td>
+                                );
+                              })}
+                              <td className="r total-col">{g.total}h</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="total-row">
+                            <td className="curs-cell">Mitjana/grup</td>
+                            {depts.map(d => {
+                              const avg = grupsData.grups.length > 0 
+                                ? Math.round(grupsData.totByDept[d.id] / grupsData.grups.length * 10) / 10 
+                                : 0;
+                              return (
+                                <td key={d.id} className="c">{avg > 0 ? avg : "—"}</td>
+                              );
+                            })}
+                            <td className="r">
+                              {grupsData.grups.length > 0 
+                                ? Math.round(grupsData.grups.reduce((s, g) => s + g.total, 0) / grupsData.grups.length * 10) / 10
+                                : 0}h
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                    </>
+                  ) : (
+                    <div className="empty">
+                      No hi ha dades per a {selectedNivell}
+                    </div>
+                  )}
+                  
+                  {grupsData && grupsData.grups.length > 0 && (
+                    <div style={{marginTop:12,display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))",gap:10}}>
+                      {grupsData.grups.map(g => (
+                        <div key={g.nom} style={{background:"var(--white)",borderRadius:8,padding:"12px 14px",boxShadow:"0 1px 3px rgba(0,0,0,.06)"}}>
+                          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,marginBottom:8}}>{g.nom}</div>
+                          <div style={{fontSize:11,color:"var(--muted)",marginBottom:6}}>
+                            Total: <strong style={{color:"var(--ink)"}}>{g.total}h</strong> setmanals
+                          </div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                            {depts.filter(d => g.horesPerDept[d.id] > 0).map(d => (
+                              <span key={d.id} style={{
+                                background:"var(--blue-bg)",
+                                color:"var(--blue)",
+                                padding:"2px 6px",
+                                borderRadius:4,
+                                fontSize:10,
+                                fontWeight:600
+                              }}>
+                                {d.id}: {g.horesPerDept[d.id]}h
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── TUTORIES & COORDINACIONS VIEW ── */}
+            {view==="tutories" && (() => {
+              const allNivells = NIVELLS_BASE;
+              const totalGrups = allNivells.reduce((s,n) => s + (grupsPerNivell[n]?.length||0), 0);
+              const tutAssignades = Object.values(tutories).filter(v=>v).length;
+              const coordAssignades = Object.values(coordNivell).filter(v=>v).length;
+
+              return (
+                <>
+                  <div className="toolbar">
+                    <span className="sec-title">Tutories & Coordinacions de Nivell</span>
+                  </div>
+
+                  {/* Resum ràpid */}
+                  <div className="cards" style={{marginBottom:20}}>
+                    <div className="card">
+                      <div className="cv">{tutAssignades}/{totalGrups}</div>
+                      <div className="cl">Tutories assignades</div>
+                    </div>
+                    <div className="card card-navy">
+                      <div className="cv">{totalGrups - tutAssignades}</div>
+                      <div className="cl">Tutories lliures</div>
+                    </div>
+                    <div className="card">
+                      <div className="cv">{coordAssignades}/{allNivells.length}</div>
+                      <div className="cl">Coord. nivell assignades</div>
+                    </div>
+                  </div>
+
+                  {/* Taula tutories */}
+                  <div className="tbl-wrap" style={{marginBottom:24}}>
+                    <div style={{padding:"10px 14px 6px",fontWeight:700,fontSize:13,borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span>📋 Tutories <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 1h per grup · compta al departament assignat</span></span>
+                      <span style={{fontSize:11,color: tutAssignades===totalGrups?"var(--green)":"var(--amber)"}}>
+                        {tutAssignades===totalGrups ? "✓ Totes assignades" : `${totalGrups-tutAssignades} pendents`}
+                      </span>
+                    </div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{width:"25%"}}>Nivell</th>
+                          <th style={{width:"12%"}}>Grup</th>
+                          <th style={{width:"35%"}}>Departament tutor</th>
+                          <th style={{width:"28%"}}>Professor/a tutor/a</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allNivells.map(nivell =>
+                          (grupsPerNivell[nivell]||[]).map((grup, gi) => {
+                            const dept = tutories[grup] || "";
+                            const assigned = !!dept;
+                            return (
+                              <tr key={grup} className={!assigned ? "row-amber" : ""}>
+                                {gi===0 && <td rowSpan={grupsPerNivell[nivell].length} style={{fontWeight:600,verticalAlign:"top",paddingTop:10,borderRight:"2px solid var(--line)"}}>{nivell}</td>}
+                                <td style={{fontWeight:500}}>{grup.split(" ").pop()}</td>
+                                <td>
+                                  <select className="ie-sel" style={{width:"100%"}}
+                                    value={dept}
+                                    onChange={e => {
+                                      const newTut = {...tutories, [grup]: e.target.value};
+                                      upTut(newTut);
+                                    }}>
+                                    <option value="">— Sense assignar —</option>
+                                    {depts.map(d => <option key={d.id} value={d.id}>{d.id} — {d.nom}</option>)}
+                                  </select>
+                                </td>
+                                <td>
+                                  {dept ? (
+                                    <select className="ie-sel" style={{width:"100%"}}
+                                      value={tutories[`${grup}__prof`]||""}
+                                      onChange={e => upTut({...tutories, [`${grup}__prof`]: e.target.value})}>
+                                      <option value="">— Selecciona —</option>
+                                      {(depts.find(d=>d.id===dept)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
+                                        <option key={i} value={p.trim()}>{p.trim()}</option>
+                                      ))}
+                                    </select>
+                                  ) : <span style={{color:"var(--muted)",fontSize:11}}>Primer assigna dept.</span>}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Taula coordinacions de nivell */}
+                  <div className="tbl-wrap">
+                    <div style={{padding:"10px 14px 6px",fontWeight:700,fontSize:13,borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span>🎯 Coordinacions de Nivell <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 2h per nivell · compta al departament assignat</span></span>
+                      <span style={{fontSize:11,color: coordAssignades===allNivells.length?"var(--green)":"var(--amber)"}}>
+                        {coordAssignades===allNivells.length ? "✓ Totes assignades" : `${allNivells.length-coordAssignades} pendents`}
+                      </span>
+                    </div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{width:"25%"}}>Nivell</th>
+                          <th style={{width:"35%"}}>Departament coordinador</th>
+                          <th style={{width:"28%"}}>Professor/a coordinador/a</th>
+                          <th className="r" style={{width:"12%"}}>Hores</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allNivells.map(nivell => {
+                          const dept = coordNivell[nivell] || "";
+                          const assigned = !!dept;
+                          return (
+                            <tr key={nivell} className={!assigned ? "row-amber" : ""}>
+                              <td style={{fontWeight:600}}>{nivell}</td>
+                              <td>
+                                <select className="ie-sel" style={{width:"100%"}}
+                                  value={dept}
+                                  onChange={e => upCoord({...coordNivell, [nivell]: e.target.value})}>
+                                  <option value="">— Sense assignar —</option>
+                                  {depts.map(d => <option key={d.id} value={d.id}>{d.id} — {d.nom}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                {dept ? (
+                                  <select className="ie-sel" style={{width:"100%"}}
+                                    value={coordNivell[`${nivell}__prof`]||""}
+                                    onChange={e => upCoord({...coordNivell, [`${nivell}__prof`]: e.target.value})}>
+                                    <option value="">— Selecciona —</option>
+                                    {(depts.find(d=>d.id===dept)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
+                                      <option key={i} value={p.trim()}>{p.trim()}</option>
+                                    ))}
+                                  </select>
+                                ) : <span style={{color:"var(--muted)",fontSize:11}}>Primer assigna dept.</span>}
+                              </td>
+                              <td className="r">
+                                <span className="chip chip-ok">2h</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={3} style={{fontWeight:600}}>Total coordinacions</td>
+                          <td className="r" style={{fontWeight:700}}>{coordAssignades * 2}h</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* ── GLOBAL VIEW ── */}
+            {view==="global" && (
+              <>
+                <div className="toolbar">
+                  <span className="sec-title">Resum Global</span>
+                  <span className="sec-sub">— Tots els departaments</span>
+                </div>
+                <div className="cards">
+                  <div className="card card-navy"><div className="cv">{depts.length}</div><div className="cl">Departaments</div></div>
+                  <div className="card"><div className="cv">{totDisp}h</div><div className="cl">H. Disponibles</div></div>
+                  <div className="card"><div className="cv">{totNec}h</div><div className="cl">H. Necessàries</div></div>
+                  <div className={`card ${totDisp-totNec>=0?"card-green":"card-red"}`}>
+                    <div className="cv">{sign(totDisp-totNec)}h</div><div className="cl">Balanç Total</div>
+                  </div>
+                  <div className={`card ${totalConflicts===0?"card-green":"card-red"}`}>
+                    <div className="cv">{totalConflicts}</div><div className="cl">Depts. en dèficit</div>
+                  </div>
+                </div>
+                <div className="tbl-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Codi</th>
+                        <th>Departament</th>
+                        <th className="r">Dotacions</th>
+                        <th className="r">H/Dot</th>
+                        <th className="r">Disponibles</th>
+                        <th className="r">Necessàries</th>
+                        <th className="r">Balanç</th>
+                        <th className="r">Conceptes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {depts.map(d => {
+                        const s = stats[d.id];
+                        return (
+                          <tr key={d.id} className={s.balanc<0?"row-red":""}>
+                            <td><strong>{d.id}</strong></td>
+                            <td>{d.nom}</td>
+                            <td className="r">{d.dotacions}</td>
+                            <td className="r">{d.hPerDot}h</td>
+                            <td className="r">{s.disp}h</td>
+                            <td className="r">{s.nec}h</td>
+                            <td className="r">
+                              <span className={`disc ${s.balanc>0?"disc-pos":s.balanc<0?"disc-neg":"disc-zero"}`}>
+                                {sign(s.balanc)}h
+                              </span>
+                            </td>
+                            <td className="r">{s.concs.length}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={2}>Total</td>
+                        <td className="r">{depts.reduce((s,d)=>s+d.dotacions,0)}</td>
+                        <td></td>
+                        <td className="r">{totDisp}h</td>
+                        <td className="r">{totNec}h</td>
+                        <td className="r">
+                          <span className={`disc ${totDisp-totNec>0?"disc-pos":totDisp-totNec<0?"disc-neg":"disc-zero"}`}>
+                            {sign(totDisp-totNec)}h
+                          </span>
+                        </td>
+                        <td className="r">{concs.length}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* ── SCENARIOS VIEW ── */}
+            {view==="scenarios" && (
+              <>
+                <div className="toolbar">
+                  <span className="sec-title">Escenaris Desats</span>
+                  <span className="sec-sub">— Versions guardades de la planificació</span>
+                </div>
+                {scenarios.length === 0 ? (
+                  <div className="empty">
+                    Cap escenari desat. Clica "💾 Desa" per guardar l'estat actual.
+                  </div>
+                ) : (
+                  <div className="tbl-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Data</th>
+                          <th className="r">Depts</th>
+                          <th className="r">Conceptes</th>
+                          <th className="no-print"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scenarios.map(sc => (
+                          <tr key={sc.id}>
+                            <td><strong>{sc.nom}</strong></td>
+                            <td>{sc.data}</td>
+                            <td className="r">{sc.depts.length}</td>
+                            <td className="r">{sc.concs.length}</td>
+                            <td className="no-print">
+                              <div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>
+                                <button className="btn btn-green btn-sm" onClick={()=>loadSc(sc)}>Carregar</button>
+                                <button className="btn btn-red btn-sm" onClick={()=>delSc(sc.id)}>×</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+          </div>
+        </div>
+      </div>
+
+      {/* MODAL: ADD */}
+      {modal==="add" && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div className="modal">
+            <div className="mhdr">
+              <div className="mtitle">+ Nou concepte</div>
+              <button className="cx" onClick={()=>setModal(null)}>×</button>
+            </div>
+            <div className="mbody">
+              <div className="frow" style={{gridTemplateColumns:"1fr 1fr"}}>
+                <div>
+                  <label className="flbl">Departament</label>
+                  <select className="finput" value={form.dept} onChange={e=>setForm({...form,dept:e.target.value})}>
+                    {depts.map(d=><option key={d.id} value={d.id}>{d.id} — {d.nom}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="flbl">Curs</label>
+                  <select className="finput" value={form.curs} onChange={e=>setForm({...form,curs:e.target.value})}>
+                    <optgroup label="Cursos regulars">
+                      {CURSOS_BASE.map(c=><option key={c} value={c}>{c}</option>)}
+                    </optgroup>
+                    {grupsEspecials.length > 0 && (
+                      <optgroup label="Grups especials">
+                        {grupsEspecials.map(ge=><option key={ge.id} value={ge.nom}>{ge.nom}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="flbl">Nom del concepte</label>
+                <input className="finput" type="text" autoFocus
+                  placeholder="Ex: Llengua Catalana, Reducció sindical 2h..."
+                  value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})}/>
+              </div>
+              <div className="frow" style={{gridTemplateColumns:"1fr 1fr 1fr 1fr"}}>
+                <div>
+                  <label className="flbl">Tipus</label>
+                  <select className="finput" value={form.tipus} onChange={e=>setForm({...form,tipus:e.target.value,tipusAlt:""})}>
+                    {TIPUS_OPTS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+                  </select>
+                  {form.tipus==="altre" && (
+                    <input className="finput" type="text" style={{marginTop:6}}
+                      placeholder="Especifica el tipus..."
+                      value={form.tipusAlt||""}
+                      onChange={e=>setForm({...form,tipusAlt:e.target.value})}/>
+                  )}
+                </div>
+                <div>
+                  <label className="flbl">Grups</label>
+                  <input className="finput" type="number" min="1" value={form.grups}
+                    onChange={e=>setForm({...form,grups:e.target.value})}/>
+                </div>
+                <div>
+                  <label className="flbl">H / Grup</label>
+                  <input className="finput" type="number" value={form.hPerGrup}
+                    onChange={e=>setForm({...form,hPerGrup:e.target.value})}
+                    placeholder="3"/>
+                </div>
+                <div>
+                  <label className="flbl" title="Hores desdoblades: compten al dept. però no al grup">H desdobl.</label>
+                  <input className="finput" type="number" min="0" value={form.hDesdobl||0}
+                    onChange={e=>setForm({...form,hDesdobl:e.target.value})}
+                    placeholder="0"/>
+                </div>
+              </div>
+              <div style={{background:"var(--bg)",borderRadius:7,padding:"8px 12px",fontSize:12,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+                <span style={{color:"var(--muted)"}}>Total dept.: <strong style={{fontFamily:"'Syne',sans-serif"}}>{(Number(form.grups)||0)*((Number(form.hPerGrup)||0)+(Number(form.hDesdobl)||0))}h</strong></span>
+                <span style={{color:"var(--muted)"}}>H per grup: <strong style={{fontFamily:"'Syne',sans-serif"}}>{Number(form.hPerGrup)||0}h</strong></span>
+              </div>
+              <div>
+                <label className="flbl">Observacions</label>
+                <input className="finput" type="text" placeholder="Opcional: notes, referències..."
+                  value={form.obs} onChange={e=>setForm({...form,obs:e.target.value})}/>
+              </div>
+            </div>
+            <div className="mfoot">
+              <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+              <button className="btn btn-navy" onClick={saveAdd} disabled={!form.nom.trim()}>Afegir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TRANSFER */}
+      {modal==="tfr" && (() => {
+        const c = concs.find(x=>x.id===tfrId);
+        if (!c) return null;
+        const origS = stats[c.dept];
+        const destS = tfrTo ? stats[tfrTo] : null;
+        const impact = totalHores(c);
+        return (
+          <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+            <div className="modal">
+              <div className="mhdr">
+                <div className="mtitle">⇄ Moure concepte</div>
+                <button className="cx" onClick={()=>setModal(null)}>×</button>
+              </div>
+              <div className="mbody">
+                <div style={{background:"var(--bg)",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{fontSize:11,color:"var(--muted)",marginBottom:3}}>Concepte a moure</div>
+                  <div style={{fontWeight:600,fontSize:14}}>{c.nom}</div>
+                  <div style={{fontSize:11,marginTop:3,color:"var(--muted)"}}>
+                    {c.curs} · {c.grups} grups × {c.hPerGrup}h = <strong>{impact}h</strong>
+                  </div>
+                </div>
+                <div className="trf-box">
+                  <div className="trf-side trf-from">
+                    <div style={{fontSize:10,color:"var(--muted)"}}>Origen actual</div>
+                    <div className="trf-code">{c.dept}</div>
+                    <div className="trf-info">Balanç: {sign(origS.balanc)}h</div>
+                    <div className="trf-impact" style={{color:"var(--green)"}}>Allibera: +{Math.abs(impact)}h</div>
+                  </div>
+                  <div className="trf-arrow">→</div>
+                  <div className="trf-side trf-to">
+                    <div style={{fontSize:10,color:"var(--muted)"}}>Departament destí</div>
+                    <div className="trf-code">{tfrTo||"—"}</div>
+                    {destS && <div className="trf-info">Balanç: {sign(destS.balanc)}h</div>}
+                    {destS && <div className="trf-impact" style={{color:destS.balanc-impact<0?"var(--red)":"var(--green)"}}>
+                      Nou balanç: {sign(destS.balanc-impact)}h
+                    </div>}
+                  </div>
+                </div>
+                <div>
+                  <label className="flbl">Departament destí</label>
+                  <select className="finput" value={tfrTo} onChange={e=>setTfrTo(e.target.value)}>
+                    <option value="">— Selecciona —</option>
+                    {depts.filter(d=>d.id!==c.dept).map(d=>(
+                      <option key={d.id} value={d.id}>
+                        {d.id} — {d.nom} · balanç actual: {sign(stats[d.id].balanc)}h
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="mfoot">
+                <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+                <button className="btn btn-accent" onClick={doTfr} disabled={!tfrTo}>Confirmar moviment</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      
+      {/* MODAL: SPLIT */}
+      {modal==="split" && (() => {
+        const c = concs.find(x=>x.id===splitId);
+        if (!c) return null;
+        
+        const countByDept = {};
+        for (let i = 0; i < c.grups; i++) {
+          const deptId = splitAssign[i];
+          countByDept[deptId] = (countByDept[deptId] || 0) + 1;
+        }
+        const uniqueDepts = Object.keys(countByDept).length;
+        
+        return (
+          <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+            <div className="modal">
+              <div className="mhdr">
+                <div className="mtitle">✂ Dividir per grups</div>
+                <button className="cx" onClick={()=>setModal(null)}>×</button>
+              </div>
+              <div className="mbody">
+                <div className="split-info">
+                  <div className="split-title">{c.nom}</div>
+                  <div className="split-meta">
+                    {c.curs} · {c.grups} grups × {c.hPerGrup}h/grup = {totalHores(c)}h totals
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="flbl">Assigna cada grup a un departament</label>
+                  <div className="split-rows">
+                    {Array.from({length: c.grups}, (_, i) => (
+                      <div key={i} className={`split-row ${splitAssign[i] !== c.dept ? "assigned" : ""}`}>
+                        <div className="split-grup">
+                          {c.curs} {LLETRES_GRUP[i] || i+1}
+                        </div>
+                        <select 
+                          className="finput split-sel" 
+                          value={splitAssign[i]} 
+                          onChange={e => setSplitAssign({...splitAssign, [i]: e.target.value})}
+                        >
+                          {depts.map(d => (
+                            <option key={d.id} value={d.id}>
+                              {d.id} — {d.nom}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="split-h">{c.hPerGrup}h</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="split-summary">
+                  <div>
+                    <div className="split-summary-title">Resultat</div>
+                    <div style={{fontSize:12,marginTop:2}}>
+                      {uniqueDepts === 1 
+                        ? `Tots els grups al mateix departament (${Object.keys(countByDept)[0]})`
+                        : `Es crearan ${uniqueDepts} entrades separades`
+                      }
+                    </div>
+                  </div>
+                  <div className="split-summary-val">
+                    {Object.entries(countByDept).map(([d, n]) => `${d}: ${n}`).join(" · ")}
+                  </div>
+                </div>
+              </div>
+              <div className="mfoot">
+                <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+                <button className="btn btn-cyan" onClick={doSplit}>
+                  {uniqueDepts === 1 ? "Moure tot" : "Dividir"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: ADD GRUP ESPECIAL */}
+      {modal==="addGrupEspecial" && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div className="modal" style={{maxWidth:420}}>
+            <div className="mhdr">
+              <div className="mtitle">✦ Nou grup especial</div>
+              <button className="cx" onClick={()=>setModal(null)}>×</button>
+            </div>
+            <div className="mbody">
+              <div>
+                <label className="flbl">Nom del grup</label>
+                <input
+                  className="finput"
+                  type="text"
+                  autoFocus
+                  placeholder="Ex: Aula Oberta, Aula d'Acollida, PMAR..."
+                  value={grupEspecialForm.nom}
+                  onChange={e=>setGrupEspecialForm({...grupEspecialForm,nom:e.target.value})}
+                  onKeyDown={e=>e.key==="Enter"&&grupEspecialForm.nom.trim()&&saveGrupEspecial()}
+                />
+              </div>
+              <div>
+                <label className="flbl">Color identificador</label>
+                <div className="color-picker-row">
+                  {["#7c3aed","#0891b2","#059669","#d97706","#dc2626","#0f1923","#db2777","#ea580c"].map(col=>(
+                    <div key={col} className={`color-swatch${grupEspecialForm.color===col?" sel":""}`}
+                      style={{background:col}}
+                      onClick={()=>setGrupEspecialForm({...grupEspecialForm,color:col})}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div style={{background:"var(--bg)",borderRadius:7,padding:"10px 12px",fontSize:11,color:"var(--muted)"}}>
+                El grup apareixerà a la barra lateral i podrà seleccionar-se com a "curs" en els conceptes de qualsevol departament.
+              </div>
+            </div>
+            <div className="mfoot">
+              <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+              <button className="btn btn-navy" onClick={saveGrupEspecial} disabled={!grupEspecialForm.nom.trim()}>Crear grup</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: SAVE SCENARIO */}
+      {modal==="saveScenario" && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div className="modal" style={{maxWidth:400}}>
+            <div className="mhdr">
+              <div className="mtitle">💾 Desar escenari</div>
+              <button className="cx" onClick={()=>setModal(null)}>×</button>
+            </div>
+            <div className="mbody">
+              <div>
+                <label className="flbl">Nom de l'escenari</label>
+                <input 
+                  className="finput" 
+                  type="text" 
+                  autoFocus
+                  placeholder="Ex: Proposta inicial, Escenari amb 2 profs menys..."
+                  value={scenarioName} 
+                  onChange={e => setScenarioName(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && scenarioName.trim() && saveScenario()}
+                />
+              </div>
+              <div style={{background:"var(--bg)",borderRadius:7,padding:"10px 12px",fontSize:11,color:"var(--muted)"}}>
+                Es desarà una còpia de l'estat actual amb <strong>{depts.length}</strong> departaments 
+                i <strong>{concs.length}</strong> conceptes.
+              </div>
+            </div>
+            <div className="mfoot">
+              <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+              <button className="btn btn-navy" onClick={saveScenario} disabled={!scenarioName.trim()}>Desar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+const { useState, useEffect, useCallback, useMemo } = React;
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+  </script>
+</body>
+</html>
