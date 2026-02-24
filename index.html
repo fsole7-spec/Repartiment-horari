@@ -628,40 +628,6 @@ function App() {
     concs.find(c => c.tipus === "coordinacio" && c.curs === nivell)
   , [concs]);
 
-  // Assignar/actualitzar/eliminar tutoria per a un grup
-  const assignTutoria = useCallback((grup, deptId) => {
-    const existing = concs.find(c => c.tipus === "tutoria" && c.curs === grup);
-    if (!deptId) {
-      if (existing) upConcs(concs.filter(c => c.id !== existing.id));
-    } else if (existing) {
-      upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
-    } else {
-      upConcs([...concs, {id: uid(), dept: deptId, nom: `Tutoria ${grup}`, curs: grup, tipus: "tutoria", grups: 1, hPerGrup: 1, hDesdobl: 0, obs: ""}]);
-    }
-  }, [concs, upConcs]);
-
-  const assignTutoriaProf = useCallback((grup, prof) => {
-    const existing = concs.find(c => c.tipus === "tutoria" && c.curs === grup);
-    if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
-  }, [concs, upConcs]);
-
-  // Assignar/actualitzar/eliminar coordinació per a un nivell
-  const assignCoord = useCallback((nivell, deptId) => {
-    const existing = concs.find(c => c.tipus === "coordinacio" && c.curs === nivell);
-    if (!deptId) {
-      if (existing) upConcs(concs.filter(c => c.id !== existing.id));
-    } else if (existing) {
-      upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
-    } else {
-      upConcs([...concs, {id: uid(), dept: deptId, nom: `Coordinació ${nivell}`, curs: nivell, tipus: "coordinacio", grups: 1, hPerGrup: 2, hDesdobl: 0, obs: ""}]);
-    }
-  }, [concs, upConcs]);
-
-  const assignCoordProf = useCallback((nivell, prof) => {
-    const existing = concs.find(c => c.tipus === "coordinacio" && c.curs === nivell);
-    if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
-  }, [concs, upConcs]);
-
   // ── Persist ──
   useEffect(() => {
     (async () => {
@@ -671,7 +637,6 @@ function App() {
           const s = JSON.parse(r.value);
           if (s.depts?.length) setDepts(s.depts);
           if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
-          // Migració: convertir tutories/coordNivell antics a concs si cal
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -702,6 +667,39 @@ function App() {
   const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials); };
   const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials); };
   const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge); };
+
+  // Assignar/actualitzar/eliminar tutoria per a un grup
+  const assignTutoria = useCallback((grup, deptId) => {
+    const existing = concs.find(c => c.tipus === "tutoria" && c.curs === grup);
+    if (!deptId) {
+      if (existing) upConcs(concs.filter(c => c.id !== existing.id));
+    } else if (existing) {
+      upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
+    } else {
+      upConcs([...concs, {id: uid(), dept: deptId, nom: `Tutoria ${grup}`, curs: grup, tipus: "tutoria", grups: 1, hPerGrup: 1, hDesdobl: 0, obs: ""}]);
+    }
+  }, [concs, upConcs]);
+
+  const assignTutoriaProf = useCallback((grup, prof) => {
+    const existing = concs.find(c => c.tipus === "tutoria" && c.curs === grup);
+    if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
+  }, [concs, upConcs]);
+
+  const assignCoord = useCallback((nivell, deptId) => {
+    const existing = concs.find(c => c.tipus === "coordinacio" && c.curs === nivell);
+    if (!deptId) {
+      if (existing) upConcs(concs.filter(c => c.id !== existing.id));
+    } else if (existing) {
+      upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
+    } else {
+      upConcs([...concs, {id: uid(), dept: deptId, nom: `Coordinació ${nivell}`, curs: nivell, tipus: "coordinacio", grups: 1, hPerGrup: 2, hDesdobl: 0, obs: ""}]);
+    }
+  }, [concs, upConcs]);
+
+  const assignCoordProf = useCallback((nivell, prof) => {
+    const existing = concs.find(c => c.tipus === "coordinacio" && c.curs === nivell);
+    if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
+  }, [concs, upConcs]);
 
   // ── Sorting ──
   const handleSort = col => {
