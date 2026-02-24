@@ -587,11 +587,8 @@ function App() {
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
 
-  // Tutories i coordinacions de nivell
-  // tutories: { "1r ESO A": "CAT", "1r ESO B": "MATES", ... }
-  // coordNivell: { "1r ESO": "CAT", "2n ESO": "MATES", ... }
-  const [tutories, setTutories] = useState({});
-  const [coordNivell, setCoordNivell] = useState({});
+  // Tutories i coordinacions: ara es gestionen com a concs (tipus "tutoria" / "coordinacio")
+  // Els estats separats ja no calen, tot va per concs
 
   // Derived: all available CURSOS (base + grups especials as course names)
   const CURSOS = useMemo(() => [
@@ -605,16 +602,25 @@ function App() {
     ...grupsEspecials.map(g => g.nom)
   ], [grupsEspecials]);
 
-  // Derived: all groups per nivell (from concs data)
+  // Derived: all groups per nivell (from concs data - max grups of any conc for that nivell)
   const grupsPerNivell = useMemo(() => {
     const result = {};
     NIVELLS_BASE.forEach(nivell => {
-      const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio");
-      const maxGrups = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups)) : 3;
-      result[nivell] = Array.from({length: maxGrups}, (_, i) => `${nivell} ${LLETRES_GRUP[i] || i+1}`);
+      const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio" && c.tipus !== "tutoria");
+      const maxGrups = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups||1)) : 0;
+      result[nivell] = maxGrups > 0 ? Array.from({length: maxGrups}, (_, i) => `${nivell} ${LLETRES_GRUP[i] || i+1}`) : [];
     });
     return result;
   }, [concs]);
+
+  // Derived: tutories i coordinacions des de concs
+  const tutoriesConcs = useMemo(() => concs.filter(c => c.tipus === "tutoria"), [concs]);
+  const coordConcs = useMemo(() => concs.filter(c => c.tipus === "coordinacio"), [concs]);
+
+  // Helper: get tutoria conc for a specific grup
+  const getTutoriaPerGrup = (grup) => tutoriesConcs.find(c => c.curs === grup);
+  // Helper: get coordinacio conc for a specific nivell
+  const getCoordPerNivell = (nivell) => coordConcs.find(c => c.curs === nivell);
 
   // ── Persist ──
   useEffect(() => {
@@ -627,23 +633,38 @@ function App() {
           if (s.concs?.length) setConcs(s.concs);
           if (s.scenarios)     setScenarios(s.scenarios);
           if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
-          if (s.tutories)      setTutories(s.tutories);
-          if (s.coordNivell)   setCoordNivell(s.coordNivell);
+          // Migració: si hi havia tutories/coordNivell antics, els convertim a concs
+          if (s.tutories && !s.concs?.some(c => c.tipus === "tutoria")) {
+            const tutConcs = [];
+            Object.entries(s.tutories).forEach(([grup, deptId]) => {
+              if (deptId && !grup.includes("__prof")) {
+                tutConcs.push({id: uid(), dept: deptId, nom: `Tutoria ${grup}`, curs: grup, tipus: "tutoria", grups: 1, hPerGrup: 1, hDesdobl: 0, obs: s.tutories[`${grup}__prof`] || ""});
+              }
+            });
+            if (tutConcs.length > 0) setConcs(prev => [...prev, ...tutConcs]);
+          }
+          if (s.coordNivell && !s.concs?.some(c => c.tipus === "coordinacio")) {
+            const coordConcsNew = [];
+            Object.entries(s.coordNivell).forEach(([nivell, deptId]) => {
+              if (deptId && !nivell.includes("__prof")) {
+                coordConcsNew.push({id: uid(), dept: deptId, nom: `Coordinació ${nivell}`, curs: nivell, tipus: "coordinacio", grups: 1, hPerGrup: 2, hDesdobl: 0, obs: s.coordNivell[`${nivell}__prof`] || ""});
+              }
+            });
+            if (coordConcsNew.length > 0) setConcs(prev => [...prev, ...coordConcsNew]);
+          }
         }
       } catch(_) {}
     })();
   }, []);
 
-  const save = useCallback((d, c, sc, ge, tut, coord) => {
-    window.storage.set("grc5", JSON.stringify({depts:d,concs:c,scenarios:sc,grupsEspecials:ge,tutories:tut,coordNivell:coord})).catch(()=>{});
+  const save = useCallback((d, c, sc, ge) => {
+    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge})).catch(()=>{});
   }, []);
 
-  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials, tutories, coordNivell); };
-  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials, tutories, coordNivell); };
-  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials, tutories, coordNivell); };
-  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge, tutories, coordNivell); };
-  const upTut   = tut => { setTutories(tut); save(depts, concs, scenarios, grupsEspecials, tut, coordNivell); };
-  const upCoord = coord => { setCoordNivell(coord); save(depts, concs, scenarios, grupsEspecials, tutories, coord); };
+  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials); };
+  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials); };
+  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials); };
+  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge); };
 
   // ── Sorting ──
   const handleSort = col => {
@@ -1398,13 +1419,49 @@ function App() {
             {view==="tutories" && (() => {
               const allNivells = NIVELLS_BASE;
               const totalGrups = allNivells.reduce((s,n) => s + (grupsPerNivell[n]?.length||0), 0);
-              const tutAssignades = Object.values(tutories).filter(v=>v).length;
-              const coordAssignades = Object.values(coordNivell).filter(v=>v).length;
+              const tutAssignades = allNivells.reduce((s,n) => s + (grupsPerNivell[n]||[]).filter(g => getTutoriaPerGrup(g)).length, 0);
+              const coordAssignades = allNivells.filter(n => getCoordPerNivell(n)).length;
+
+              const assignTutoria = (grup, deptId) => {
+                const existing = getTutoriaPerGrup(grup);
+                if (!deptId) {
+                  // Eliminar tutoria
+                  if (existing) upConcs(concs.filter(c => c.id !== existing.id));
+                } else if (existing) {
+                  // Actualitzar dept
+                  upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
+                } else {
+                  // Crear nova tutoria
+                  upConcs([...concs, {id: uid(), dept: deptId, nom: `Tutoria ${grup}`, curs: grup, tipus: "tutoria", grups: 1, hPerGrup: 1, hDesdobl: 0, obs: ""}]);
+                }
+              };
+
+              const assignTutoriaProf = (grup, prof) => {
+                const existing = getTutoriaPerGrup(grup);
+                if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
+              };
+
+              const assignCoord = (nivell, deptId) => {
+                const existing = getCoordPerNivell(nivell);
+                if (!deptId) {
+                  if (existing) upConcs(concs.filter(c => c.id !== existing.id));
+                } else if (existing) {
+                  upConcs(concs.map(c => c.id === existing.id ? {...c, dept: deptId} : c));
+                } else {
+                  upConcs([...concs, {id: uid(), dept: deptId, nom: `Coordinació ${nivell}`, curs: nivell, tipus: "coordinacio", grups: 1, hPerGrup: 2, hDesdobl: 0, obs: ""}]);
+                }
+              };
+
+              const assignCoordProf = (nivell, prof) => {
+                const existing = getCoordPerNivell(nivell);
+                if (existing) upConcs(concs.map(c => c.id === existing.id ? {...c, obs: prof} : c));
+              };
 
               return (
                 <>
                   <div className="toolbar">
                     <span className="sec-title">Tutories & Coordinacions de Nivell</span>
+                    <span className="sec-sub">— Les hores compten automàticament al departament assignat</span>
                   </div>
 
                   {/* Resum ràpid */}
@@ -1413,60 +1470,66 @@ function App() {
                       <div className="cv">{tutAssignades}/{totalGrups}</div>
                       <div className="cl">Tutories assignades</div>
                     </div>
-                    <div className="card card-navy">
+                    <div className={`card ${totalGrups-tutAssignades===0?"card-green":"card-navy"}`}>
                       <div className="cv">{totalGrups - tutAssignades}</div>
-                      <div className="cl">Tutories lliures</div>
+                      <div className="cl">Tutories pendents</div>
                     </div>
                     <div className="card">
                       <div className="cv">{coordAssignades}/{allNivells.length}</div>
-                      <div className="cl">Coord. nivell assignades</div>
+                      <div className="cl">Coord. assignades</div>
+                    </div>
+                    <div className="card">
+                      <div className="cv">{tutAssignades + coordAssignades * 2}h</div>
+                      <div className="cl">Total hores assignades</div>
                     </div>
                   </div>
 
                   {/* Taula tutories */}
                   <div className="tbl-wrap" style={{marginBottom:24}}>
                     <div style={{padding:"10px 14px 6px",fontWeight:700,fontSize:13,borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span>📋 Tutories <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 1h per grup · compta al departament assignat</span></span>
+                      <span>📋 Tutories <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 1h per grup</span></span>
                       <span style={{fontSize:11,color: tutAssignades===totalGrups?"var(--green)":"var(--amber)"}}>
                         {tutAssignades===totalGrups ? "✓ Totes assignades" : `${totalGrups-tutAssignades} pendents`}
                       </span>
                     </div>
+                    {totalGrups === 0 ? (
+                      <div style={{padding:20,color:"var(--muted)",fontSize:13,textAlign:"center"}}>
+                        No hi ha grups definits. Afegeix conceptes amb grups als departaments per veure les tutories aquí.
+                      </div>
+                    ) : (
                     <table>
                       <thead>
                         <tr>
-                          <th style={{width:"25%"}}>Nivell</th>
-                          <th style={{width:"12%"}}>Grup</th>
-                          <th style={{width:"35%"}}>Departament tutor</th>
-                          <th style={{width:"28%"}}>Professor/a tutor/a</th>
+                          <th style={{width:"18%"}}>Nivell</th>
+                          <th style={{width:"8%"}}>Grup</th>
+                          <th style={{width:"37%"}}>Departament tutor</th>
+                          <th style={{width:"37%"}}>Professor/a tutor/a</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {allNivells.map(nivell =>
+                        {allNivells.filter(n => grupsPerNivell[n]?.length > 0).map(nivell =>
                           (grupsPerNivell[nivell]||[]).map((grup, gi) => {
-                            const dept = tutories[grup] || "";
-                            const assigned = !!dept;
+                            const tutConc = getTutoriaPerGrup(grup);
+                            const deptId = tutConc?.dept || "";
                             return (
-                              <tr key={grup} className={!assigned ? "row-amber" : ""}>
+                              <tr key={grup} className={!deptId ? "row-amber" : ""}>
                                 {gi===0 && <td rowSpan={grupsPerNivell[nivell].length} style={{fontWeight:600,verticalAlign:"top",paddingTop:10,borderRight:"2px solid var(--line)"}}>{nivell}</td>}
-                                <td style={{fontWeight:500}}>{grup.split(" ").pop()}</td>
+                                <td style={{fontWeight:600,textAlign:"center"}}>{grup.split(" ").pop()}</td>
                                 <td>
                                   <select className="ie-sel" style={{width:"100%"}}
-                                    value={dept}
-                                    onChange={e => {
-                                      const newTut = {...tutories, [grup]: e.target.value};
-                                      upTut(newTut);
-                                    }}>
+                                    value={deptId}
+                                    onChange={e => assignTutoria(grup, e.target.value)}>
                                     <option value="">— Sense assignar —</option>
                                     {depts.map(d => <option key={d.id} value={d.id}>{d.id} — {d.nom}</option>)}
                                   </select>
                                 </td>
                                 <td>
-                                  {dept ? (
+                                  {deptId ? (
                                     <select className="ie-sel" style={{width:"100%"}}
-                                      value={tutories[`${grup}__prof`]||""}
-                                      onChange={e => upTut({...tutories, [`${grup}__prof`]: e.target.value})}>
-                                      <option value="">— Selecciona —</option>
-                                      {(depts.find(d=>d.id===dept)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
+                                      value={tutConc?.obs||""}
+                                      onChange={e => assignTutoriaProf(grup, e.target.value)}>
+                                      <option value="">— Selecciona professor/a —</option>
+                                      {(depts.find(d=>d.id===deptId)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
                                         <option key={i} value={p.trim()}>{p.trim()}</option>
                                       ))}
                                     </select>
@@ -1478,12 +1541,13 @@ function App() {
                         )}
                       </tbody>
                     </table>
+                    )}
                   </div>
 
                   {/* Taula coordinacions de nivell */}
                   <div className="tbl-wrap">
                     <div style={{padding:"10px 14px 6px",fontWeight:700,fontSize:13,borderBottom:"1px solid var(--line)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span>🎯 Coordinacions de Nivell <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 2h per nivell · compta al departament assignat</span></span>
+                      <span>🎯 Coordinacions de Nivell <span style={{fontWeight:400,fontSize:11,color:"var(--muted)"}}>— 2h per nivell</span></span>
                       <span style={{fontSize:11,color: coordAssignades===allNivells.length?"var(--green)":"var(--amber)"}}>
                         {coordAssignades===allNivells.length ? "✓ Totes assignades" : `${allNivells.length-coordAssignades} pendents`}
                       </span>
@@ -1491,41 +1555,41 @@ function App() {
                     <table>
                       <thead>
                         <tr>
-                          <th style={{width:"25%"}}>Nivell</th>
-                          <th style={{width:"35%"}}>Departament coordinador</th>
-                          <th style={{width:"28%"}}>Professor/a coordinador/a</th>
-                          <th className="r" style={{width:"12%"}}>Hores</th>
+                          <th style={{width:"20%"}}>Nivell</th>
+                          <th style={{width:"37%"}}>Departament coordinador</th>
+                          <th style={{width:"35%"}}>Professor/a coordinador/a</th>
+                          <th className="r" style={{width:"8%"}}>Hores</th>
                         </tr>
                       </thead>
                       <tbody>
                         {allNivells.map(nivell => {
-                          const dept = coordNivell[nivell] || "";
-                          const assigned = !!dept;
+                          const coordConc = getCoordPerNivell(nivell);
+                          const deptId = coordConc?.dept || "";
                           return (
-                            <tr key={nivell} className={!assigned ? "row-amber" : ""}>
+                            <tr key={nivell} className={!deptId ? "row-amber" : ""}>
                               <td style={{fontWeight:600}}>{nivell}</td>
                               <td>
                                 <select className="ie-sel" style={{width:"100%"}}
-                                  value={dept}
-                                  onChange={e => upCoord({...coordNivell, [nivell]: e.target.value})}>
+                                  value={deptId}
+                                  onChange={e => assignCoord(nivell, e.target.value)}>
                                   <option value="">— Sense assignar —</option>
                                   {depts.map(d => <option key={d.id} value={d.id}>{d.id} — {d.nom}</option>)}
                                 </select>
                               </td>
                               <td>
-                                {dept ? (
+                                {deptId ? (
                                   <select className="ie-sel" style={{width:"100%"}}
-                                    value={coordNivell[`${nivell}__prof`]||""}
-                                    onChange={e => upCoord({...coordNivell, [`${nivell}__prof`]: e.target.value})}>
-                                    <option value="">— Selecciona —</option>
-                                    {(depts.find(d=>d.id===dept)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
+                                    value={coordConc?.obs||""}
+                                    onChange={e => assignCoordProf(nivell, e.target.value)}>
+                                    <option value="">— Selecciona professor/a —</option>
+                                    {(depts.find(d=>d.id===deptId)?.profes||"").split(",").filter(p=>p.trim()).map((p,i)=>(
                                       <option key={i} value={p.trim()}>{p.trim()}</option>
                                     ))}
                                   </select>
                                 ) : <span style={{color:"var(--muted)",fontSize:11}}>Primer assigna dept.</span>}
                               </td>
                               <td className="r">
-                                <span className="chip chip-ok">2h</span>
+                                {deptId ? <span className="chip chip-ok">2h</span> : <span style={{color:"var(--muted)"}}>—</span>}
                               </td>
                             </tr>
                           );
