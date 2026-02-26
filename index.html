@@ -52,7 +52,7 @@ if (!document.getElementById("grc-fonts")) {
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2,9);
 
-const CURSOS_BASE = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","CFGM","CFGS","Transversal","—"];
+const CURSOS_BASE_DEFAULT = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","FP Bàsica 2","CFGM","CFGS","Transversal","—"];
 const TIPUS_OPTS = [
   {v:"materia",l:"Matèria"},
   {v:"tutoria",l:"Tutoria"},
@@ -67,7 +67,7 @@ const TIPUS_OPTS = [
 const LLETRES_GRUP = ["A","B","C","D","E","F","G","H"];
 
 // Nivells base per agrupar
-const NIVELLS_BASE = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","CFGM","CFGS"];
+const NIVELLS_BASE_DEFAULT = ["1r ESO","2n ESO","3r ESO","4t ESO","1r BAT","2n BAT","FP Bàsica","FP Bàsica 2","CFGM","CFGS"];
 
 // Grups especials base (es poden afegir/eliminar)
 const GRUPS_ESPECIALS_BASE = [
@@ -292,6 +292,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--ink);font-
 .dr-code{font-family:'Syne',sans-serif;font-weight:800;font-size:12px;width:54px;flex-shrink:0}
 .dr-info{flex:1;min-width:0}
 .dr-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dr-icon{font-size:14px;line-height:1;margin-top:2px}
 .dr-sub{font-size:10px;color:var(--muted)}
 .di-badge{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;flex-shrink:0}
 .badge-ok{background:var(--green-mid);color:var(--green)}
@@ -579,10 +580,13 @@ function App() {
   // Grup especial form
   const [grupEspecialForm, setGrupEspecialForm] = useState({nom:"", color:"#7c3aed"});
   const [newDeptForm, setNewDeptForm] = useState({id:"", nom:"", dotacions:4, hPerDot:18, profes:""});
+  const [newCursForm, setNewCursForm] = useState({nom:"", esNivell:true});
 
   // Sorting state for dept table
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
+  const [cursosBase, setCursosBase]   = useState(CURSOS_BASE_DEFAULT);
+  const [nivellsBase, setNivellsBase] = useState(NIVELLS_BASE_DEFAULT);
 
   // ── Derived: grups dinàmics ──
   // Per cada nivell base: el màxim de grups definit en qualsevol concepte d'aquell nivell
@@ -590,7 +594,7 @@ function App() {
   const grupsPerNivell = useMemo(() => {
     const result = {};
     // Nivells base (1r ESO, 2n ESO, etc.)
-    NIVELLS_BASE.forEach(nivell => {
+    nivellsBase.forEach(nivell => {
       const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio" && c.tipus !== "tutoria");
       const maxGrups = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups||1)) : 0;
       if (maxGrups > 0) result[nivell] = Array.from({length: maxGrups}, (_, i) => `${nivell} ${LLETRES_GRUP[i]||i+1}`);
@@ -605,13 +609,13 @@ function App() {
   // Tots els "grups" disponibles (per tutories): nivells base expandits + grups especials
   const totsElsGrups = useMemo(() => {
     const grups = [];
-    NIVELLS_BASE.forEach(n => { if (grupsPerNivell[n]) grups.push(...grupsPerNivell[n]); });
+    nivellsBase.forEach(n => { if (grupsPerNivell[n]) grups.push(...grupsPerNivell[n]); });
     grupsEspecials.forEach(ge => { if (grupsPerNivell[ge.nom]) grups.push(ge.nom); });
     return grups;
   }, [grupsPerNivell, grupsEspecials]);
 
   // Tots els nivells base que tenen coordinació disponible (tenen grups definits)
-  const nivellsAmbGrups = useMemo(() => NIVELLS_BASE.filter(n => grupsPerNivell[n]), [grupsPerNivell]);
+  const nivellsAmbGrups = useMemo(() => nivellsBase.filter(n => grupsPerNivell[n]), [grupsPerNivell]);
 
   // Tutories i coordinacions: es gestionen com a concs (tipus "tutoria" / "coordinacio")
   // Helper: get tutoria conc for a specific grup (curs = nom del grup, ex "1r ESO A")
@@ -640,6 +644,8 @@ function App() {
             setDepts(mergedDepts);
           }
           if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
+          if (s.cursosBase)    setCursosBase(s.cursosBase);
+          if (s.nivellsBase)   setNivellsBase(s.nivellsBase);
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -662,14 +668,15 @@ function App() {
     })();
   }, []);
 
-  const save = useCallback((d, c, sc, ge) => {
-    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge})).catch(()=>{});
+  const save = useCallback((d, c, sc, ge, cb, nb) => {
+    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb})).catch(()=>{});
   }, []);
 
-  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials); };
-  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials); };
-  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials); };
-  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge); };
+  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials, cursosBase, nivellsBase); };
+  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials, cursosBase, nivellsBase); };
+  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials, cursosBase, nivellsBase); };
+  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge, cursosBase, nivellsBase); };
+  const upCursosBase = (cb, nb) => { setCursosBase(cb); setNivellsBase(nb); save(depts, concs, scenarios, grupsEspecials, cb, nb); };
 
   // Assignar/actualitzar/eliminar tutoria per a un grup
   const assignTutoria = useCallback((grup, deptId) => {
@@ -981,6 +988,19 @@ function App() {
   function delSc(id)  { upSc(scenarios.filter(s => s.id !== id)); }
   
   // ── Grups Especials ──
+  function openAddCurs() {
+    setNewCursForm({nom:"", esNivell:true});
+    setModal("addCurs");
+  }
+  function saveNewCurs() {
+    const nom = newCursForm.nom.trim();
+    if (!nom || cursosBase.includes(nom)) return;
+    const newCursos = [...cursosBase.filter(c=>c!=="—"), nom, "—"];
+    const newNivells = newCursForm.esNivell ? [...nivellsBase, nom] : nivellsBase;
+    upCursosBase(newCursos, newNivells);
+    setModal(null);
+  }
+
   function openAddDept() {
     setNewDeptForm({id:"", nom:"", dotacions:4, hPerDot:18, profes:""});
     setModal("addDept");
@@ -1052,7 +1072,8 @@ function App() {
                   onClick={()=>{setActDept(d.id);setView("dept")}}>
                   <div className="dr-code">{d.id}</div>
                   <div className="dr-info">
-                    <div className="dr-name">{d.icon && <span style={{marginRight:5}}>{d.icon}</span>}{d.nom}</div>
+                    <div className="dr-name">{d.nom}</div>
+                    {d.icon && <div className="dr-icon">{d.icon}</div>}
                     <div className="dr-sub">{d.dotacions}dot · {s.disp}h disp · {s.concs.length} conceptes</div>
                   </div>
                   <div className={`di-badge ${clsBadge(s.balanc)}`}>{sign(s.balanc)}h</div>
@@ -1060,6 +1081,7 @@ function App() {
               );
             })}
             <button className="ge-add-btn no-print" onClick={openAddDept} style={{marginTop:4}}>+ Nou departament</button>
+            <button className="ge-add-btn no-print" onClick={openAddCurs} style={{marginTop:4}}>+ Nou curs</button>
             
             {/* GRUPS ESPECIALS */}
             <div className="ge-section">
@@ -1186,7 +1208,7 @@ function App() {
                                 onChange={e=>updConc(c.id,"curs",e.target.value)}
                                 list={`cursos-${c.id}`}/>
                               <datalist id={`cursos-${c.id}`}>
-                                {CURSOS_BASE.map(cs=><option key={cs} value={cs}/>)}
+                                {cursosBase.map(cs=><option key={cs} value={cs}/>)}
                                 {grupsEspecials.map(ge=><option key={ge.id} value={ge.nom}/>)}
                               </datalist>
                             </td>
@@ -1264,6 +1286,9 @@ function App() {
                       </tfoot>
                     )}
                   </table>
+                </div>
+                <div className="no-print" style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
+                  <button className="btn btn-navy btn-sm" onClick={openAdd}>+ Afegir concepte</button>
                 </div>
               </>
             )}
@@ -1352,7 +1377,7 @@ function App() {
                     <label>Selecciona nivell:</label>
                     <select value={selectedNivell} onChange={e => setSelectedNivell(e.target.value)}>
                       <optgroup label="Cursos regulars">
-                        {NIVELLS_BASE.map(n => (
+                        {nivellsBase.map(n => (
                           <option key={n} value={n}>{n}</option>
                         ))}
                       </optgroup>
@@ -1550,7 +1575,7 @@ function App() {
                       </thead>
                       <tbody>
                         {/* Nivells base */}
-                        {NIVELLS_BASE.filter(n => grupsPerNivell[n]?.length > 0).map(nivell =>
+                        {nivellsBase.filter(n => grupsPerNivell[n]?.length > 0).map(nivell =>
                           (grupsPerNivell[nivell]).map((grup, gi) =>
                             renderTutoriaRow(grup, gi, grupsPerNivell[nivell].length,
                               gi===0 ? <td rowSpan={grupsPerNivell[nivell].length} style={{fontWeight:600,verticalAlign:"top",paddingTop:10,borderRight:"2px solid var(--line)"}}>{nivell}</td> : null
@@ -1778,7 +1803,7 @@ function App() {
                   <label className="flbl">Curs</label>
                   <select className="finput" value={form.curs} onChange={e=>setForm({...form,curs:e.target.value})}>
                     <optgroup label="Cursos regulars">
-                      {CURSOS_BASE.map(c=><option key={c} value={c}>{c}</option>)}
+                      {cursosBase.map(c=><option key={c} value={c}>{c}</option>)}
                     </optgroup>
                     {grupsEspecials.length > 0 && (
                       <optgroup label="Grups especials">
@@ -2040,6 +2065,46 @@ function App() {
               <button className="btn btn-navy" onClick={saveNewDept}
                 disabled={!newDeptForm.id.trim()||!newDeptForm.nom.trim()||depts.some(d=>d.id===newDeptForm.id.toUpperCase().trim())}>
                 Crear departament
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal==="addCurs" && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div className="modal" style={{maxWidth:380}}>
+            <div className="mhdr">
+              <div className="mtitle">📚 Nou curs / etapa</div>
+              <button className="cx" onClick={()=>setModal(null)}>×</button>
+            </div>
+            <div className="mbody">
+              <div>
+                <label className="flbl">Nom del curs</label>
+                <input className="finput" type="text" autoFocus
+                  placeholder="Ex: FP Bàsica 2, CFGM Torn Tarda..."
+                  value={newCursForm.nom}
+                  onChange={e=>setNewCursForm({...newCursForm, nom:e.target.value})}/>
+                {cursosBase.includes(newCursForm.nom.trim()) &&
+                  <div style={{color:"var(--red)",fontSize:11,marginTop:3}}>Aquest curs ja existeix</div>}
+              </div>
+              <div style={{marginTop:12,display:"flex",alignItems:"center",gap:8}}>
+                <input type="checkbox" id="esNivell" checked={newCursForm.esNivell}
+                  onChange={e=>setNewCursForm({...newCursForm, esNivell:e.target.checked})}
+                  style={{width:16,height:16,cursor:"pointer"}}/>
+                <label htmlFor="esNivell" style={{fontSize:13,cursor:"pointer"}}>
+                  Afegir com a nivell amb grups (apareixerà a Tutories i a la matriu per curs)
+                </label>
+              </div>
+              <div style={{background:"var(--bg)",borderRadius:6,padding:"8px 10px",fontSize:11,color:"var(--muted)",marginTop:8}}>
+                Cursos actuals: {cursosBase.filter(c=>c!=="—").join(", ")}
+              </div>
+            </div>
+            <div className="mfoot">
+              <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+              <button className="btn btn-navy" onClick={saveNewCurs}
+                disabled={!newCursForm.nom.trim()||cursosBase.includes(newCursForm.nom.trim())}>
+                Afegir curs
               </button>
             </div>
           </div>
