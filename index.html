@@ -578,6 +578,7 @@ function App() {
   
   // Grup especial form
   const [grupEspecialForm, setGrupEspecialForm] = useState({nom:"", color:"#7c3aed"});
+  const [newDeptForm, setNewDeptForm] = useState({id:"", nom:"", dotacions:4, hPerDot:18, profes:""});
 
   // Sorting state for dept table
   const [sortCol, setSortCol] = useState(null);
@@ -980,6 +981,18 @@ function App() {
   function delSc(id)  { upSc(scenarios.filter(s => s.id !== id)); }
   
   // ── Grups Especials ──
+  function openAddDept() {
+    setNewDeptForm({id:"", nom:"", dotacions:4, hPerDot:18, profes:""});
+    setModal("addDept");
+  }
+  function saveNewDept() {
+    const d = {...newDeptForm, id: newDeptForm.id.toUpperCase().trim(), dotacions: Number(newDeptForm.dotacions)||4, hPerDot: Number(newDeptForm.hPerDot)||18};
+    if (!d.id || !d.nom.trim()) return;
+    if (depts.some(x => x.id === d.id)) return;
+    upDepts([...depts, d]);
+    setModal(null);
+  }
+
   function openAddGrupEspecial() {
     setGrupEspecialForm({nom:"", color:"#7c3aed"});
     setModal("addGrupEspecial");
@@ -1046,6 +1059,7 @@ function App() {
                 </div>
               );
             })}
+            <button className="ge-add-btn no-print" onClick={openAddDept} style={{marginTop:4}}>+ Nou departament</button>
             
             {/* GRUPS ESPECIALS */}
             <div className="ge-section">
@@ -1978,6 +1992,60 @@ function App() {
       })()}
 
       {/* MODAL: ADD GRUP ESPECIAL */}
+      {modal==="addDept" && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
+          <div className="modal" style={{maxWidth:420}}>
+            <div className="mhdr">
+              <div className="mtitle">+ Nou departament</div>
+              <button className="cx" onClick={()=>setModal(null)}>×</button>
+            </div>
+            <div className="mbody">
+              <div className="frow" style={{gridTemplateColumns:"1fr 2fr"}}>
+                <div>
+                  <label className="flbl">Codi (abreviatura)</label>
+                  <input className="finput" type="text" autoFocus placeholder="Ex: CONST, MUSIC..."
+                    value={newDeptForm.id}
+                    onChange={e=>setNewDeptForm({...newDeptForm, id:e.target.value.toUpperCase().slice(0,8)})}/>
+                  {depts.some(d=>d.id===newDeptForm.id.toUpperCase().trim()) &&
+                    <div style={{color:"var(--red)",fontSize:11,marginTop:3}}>Aquest codi ja existeix</div>}
+                </div>
+                <div>
+                  <label className="flbl">Nom complet</label>
+                  <input className="finput" type="text" placeholder="Ex: Construcció, Música..."
+                    value={newDeptForm.nom}
+                    onChange={e=>setNewDeptForm({...newDeptForm, nom:e.target.value})}/>
+                </div>
+              </div>
+              <div className="frow" style={{gridTemplateColumns:"1fr 1fr"}}>
+                <div>
+                  <label className="flbl">Dotacions</label>
+                  <input className="finput" type="number" min="1" value={newDeptForm.dotacions}
+                    onChange={e=>setNewDeptForm({...newDeptForm, dotacions:e.target.value})}/>
+                </div>
+                <div>
+                  <label className="flbl">H/Dotació</label>
+                  <input className="finput" type="number" min="1" value={newDeptForm.hPerDot}
+                    onChange={e=>setNewDeptForm({...newDeptForm, hPerDot:e.target.value})}/>
+                </div>
+              </div>
+              <div>
+                <label className="flbl">Professors/es (separats per comes)</label>
+                <textarea className="finput" rows={3} placeholder="Ex: Anna García, Joan Pérez..."
+                  value={newDeptForm.profes}
+                  onChange={e=>setNewDeptForm({...newDeptForm, profes:e.target.value})}/>
+              </div>
+            </div>
+            <div className="mfoot">
+              <button className="btn btn-ghost" onClick={()=>setModal(null)}>Cancel·lar</button>
+              <button className="btn btn-navy" onClick={saveNewDept}
+                disabled={!newDeptForm.id.trim()||!newDeptForm.nom.trim()||depts.some(d=>d.id===newDeptForm.id.toUpperCase().trim())}>
+                Crear departament
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modal==="addGrupEspecial" && (
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModal(null)}>
           <div className="modal" style={{maxWidth:420}}>
