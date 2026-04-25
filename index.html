@@ -14,6 +14,7 @@
   <script type="text/babel" data-presets="react">
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -498,6 +499,12 @@ td{padding:7px 10px;vertical-align:middle}
 }
 .profes-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .profes-title{font-size:12px;font-weight:600;color:var(--ink)}
+.dept-notes-box{page-break-inside:avoid}
+.dept-notes-textarea{font-family:inherit}
+@media print{
+  .dept-notes-box{margin-top:20px!important;border-top:1px solid #ccc;padding-top:12px}
+  .dept-notes-textarea{border:1px solid #ccc!important;min-height:80px;background:#fff!important;-webkit-print-color-adjust:exact}
+}
 .profes-input{
   width:100%;border:1.5px solid var(--line);border-radius:6px;padding:8px 10px;
   font-family:'Outfit',sans-serif;font-size:12px;resize:vertical;min-height:40px;
@@ -691,6 +698,7 @@ function App() {
   const [newDeptForm, setNewDeptForm] = useState({id:"", nom:"", dotacions:4, hPerDot:18, profes:""});
   const [newCursForm, setNewCursForm] = useState({nom:"", esNivell:true});
   const [cercaObs,   setCercaObs]   = useState([]);
+  const [deptNotes, setDeptNotes] = useState({});
   const [cercaNoms,  setCercaNoms]  = useState([]);
   const [cercaTipus, setCercaTipus] = useState([]);
   const [cercaCurs,  setCercaCurs]  = useState([]);
@@ -760,6 +768,7 @@ function App() {
           if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
           if (s.cursosBase)    setCursosBase(s.cursosBase);
           if (s.nivellsBase)   setNivellsBase(s.nivellsBase);
+          if (s.deptNotes)     setDeptNotes(s.deptNotes);
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -783,7 +792,7 @@ function App() {
   }, []);
 
   const save = useCallback((d, c, sc, ge, cb, nb) => {
-    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb})).catch(()=>{});
+    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb, deptNotes:deptNotes})).catch(()=>{});
   }, []);
 
   const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials, cursosBase, nivellsBase); };
@@ -1406,6 +1415,25 @@ function App() {
                 </div>
                 <div className="no-print" style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
                   <button className="btn btn-navy btn-sm" onClick={openAdd}>+ Afegir concepte</button>
+                </div>
+                <div className="dept-notes-box" style={{margin:"16px 0 8px"}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)",marginBottom:6}}>Notes del departament</div>
+                  <textarea
+                    className="dept-notes-textarea"
+                    placeholder="Escriu aquí observacions, acords, recordatoris o qualsevol nota del departament..."
+                    value={deptNotes[actDept]||""}
+                    onChange={e => {
+                      const n = {...deptNotes, [actDept]: e.target.value};
+                      setDeptNotes(n);
+                    }}
+                    onBlur={e => {
+                      const n = {...deptNotes, [actDept]: e.target.value};
+                      setDeptNotes(n);
+                      window.storage.set("grc5", JSON.stringify({depts, concs, scenarios, grupsEspecials, cursosBase, nivellsBase, deptNotes:n})).catch(()=>{});
+                    }}
+                    rows={4}
+                    style={{width:"100%",boxSizing:"border-box",border:"1px solid var(--line)",borderRadius:6,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",background:"var(--white)",color:"var(--ink)",lineHeight:1.5}}
+                  />
                 </div>
               </>
             )}
