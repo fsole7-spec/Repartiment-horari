@@ -17,6 +17,7 @@
 
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -709,6 +710,7 @@ function App() {
   const [newCursForm, setNewCursForm] = useState({nom:"", esNivell:true});
   const [cercaObs,   setCercaObs]   = useState([]);
   const [deptNotes, setDeptNotes] = useState({});
+  const deptNotesRef = React.useRef({});
   const [cercaNoms,  setCercaNoms]  = useState([]);
   const [cercaTipus, setCercaTipus] = useState([]);
   const [cercaCurs,  setCercaCurs]  = useState([]);
@@ -778,7 +780,7 @@ function App() {
           if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
           if (s.cursosBase)    setCursosBase(s.cursosBase);
           if (s.nivellsBase)   setNivellsBase(s.nivellsBase);
-          if (s.deptNotes)     setDeptNotes(s.deptNotes);
+          if (s.deptNotes)     { setDeptNotes(s.deptNotes); deptNotesRef.current = s.deptNotes; }
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -810,7 +812,7 @@ function App() {
   const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials, cursosBase, nivellsBase, deptNotes); };
   const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge, cursosBase, nivellsBase, deptNotes); };
   const upCursosBase = (cb, nb) => { setCursosBase(cb); setNivellsBase(nb); save(depts, concs, scenarios, grupsEspecials, cb, nb, deptNotes); };
-  const upDeptNotes = dn => { setDeptNotes(dn); save(depts, concs, scenarios, grupsEspecials, cursosBase, nivellsBase, dn); };
+  const upDeptNotes = dn => { deptNotesRef.current = dn; setDeptNotes(dn); save(depts, concs, scenarios, grupsEspecials, cursosBase, nivellsBase, dn); };
 
   // Assignar/actualitzar/eliminar tutoria per a un grup
   const assignTutoria = useCallback((grup, deptId) => {
@@ -1458,15 +1460,18 @@ function App() {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                     <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)"}}>Notes del departament</div>
                     <button className="btn btn-navy btn-sm no-print"
-                      onClick={() => upDeptNotes({...deptNotes, [actDept]: deptNotes[actDept]||""})}>
-                      💾 Guardar notes
+                      onClick={() => upDeptNotes(deptNotesRef.current)}>                      💾 Guardar notes
                     </button>
                   </div>
                   <textarea
                     className="dept-notes-textarea"
                     placeholder="Escriu aquí observacions, acords, recordatoris o qualsevol nota del departament..."
                     value={deptNotes[actDept]||""}
-                    onChange={e => setDeptNotes({...deptNotes, [actDept]: e.target.value})}
+                    onChange={e => {
+                      const n = {...deptNotesRef.current, [actDept]: e.target.value};
+                      deptNotesRef.current = n;
+                      setDeptNotes(n);
+                    }}
                     rows={4}
                     style={{width:"100%",boxSizing:"border-box",border:"1px solid var(--line)",borderRadius:6,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",background:"var(--white)",color:"var(--ink)",lineHeight:1.5}}
                   />
