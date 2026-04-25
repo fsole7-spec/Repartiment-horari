@@ -18,6 +18,7 @@
 
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -685,6 +686,9 @@ function App() {
   const [depts, setDepts]   = useState(DEPTS_BASE);
   const [concs, setConcs]   = useState(CONCS_BASE);
   const [grupsEspecials, setGrupsEspecials] = useState(GRUPS_ESPECIALS_BASE);
+  const deptsRef = React.useRef(DEPTS_BASE);
+  const concsRef = React.useRef(CONCS_BASE);
+  const grupsEspecialsRef = React.useRef(GRUPS_ESPECIALS_BASE);
   const [actDept, setActDept] = useState("CAT");
   const [view, setView]     = useState("dept");
   const [modal, setModal]   = useState(null);
@@ -692,6 +696,7 @@ function App() {
   const [tfrId, setTfrId]   = useState(null);
   const [tfrTo, setTfrTo]   = useState("");
   const [scenarios, setScenarios] = useState([]);
+  const scenariosRef = React.useRef([]);
   
   // Split modal state
   const [splitId, setSplitId] = useState(null);
@@ -721,6 +726,8 @@ function App() {
   const [sortDir, setSortDir] = useState("asc");
   const [cursosBase, setCursosBase]   = useState(CURSOS_BASE_DEFAULT);
   const [nivellsBase, setNivellsBase] = useState(NIVELLS_BASE_DEFAULT);
+  const cursosBaseRef  = React.useRef(CURSOS_BASE_DEFAULT);
+  const nivellsBaseRef = React.useRef(NIVELLS_BASE_DEFAULT);
 
   // ── Derived: grups dinàmics ──
   // Per cada nivell base: el màxim de grups definit en qualsevol concepte d'aquell nivell
@@ -770,17 +777,17 @@ function App() {
         if (r) {
           const s = JSON.parse(r.value);
           if (s.depts?.length) {
-            // Sincronitza icones i torns des de DEPTS_BASE sense perdre dades guardades
             const mergedDepts = s.depts.map(sd => {
               const base = DEPTS_BASE.find(b => b.id === sd.id);
               return base ? {...sd, icon: base.icon, torns: base.torns} : sd;
             });
+            deptsRef.current = mergedDepts;
             setDepts(mergedDepts);
           }
-          if (s.grupsEspecials) setGrupsEspecials(s.grupsEspecials);
-          if (s.cursosBase)    setCursosBase(s.cursosBase);
-          if (s.nivellsBase)   setNivellsBase(s.nivellsBase);
-          if (s.deptNotes)     { setDeptNotes(s.deptNotes); deptNotesRef.current = s.deptNotes; }
+          if (s.grupsEspecials) { grupsEspecialsRef.current = s.grupsEspecials; setGrupsEspecials(s.grupsEspecials); }
+          if (s.cursosBase)    { cursosBaseRef.current = s.cursosBase; setCursosBase(s.cursosBase); }
+          if (s.nivellsBase)   { nivellsBaseRef.current = s.nivellsBase; setNivellsBase(s.nivellsBase); }
+          if (s.deptNotes)     { deptNotesRef.current = s.deptNotes; setDeptNotes(s.deptNotes); }
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -796,23 +803,35 @@ function App() {
               }
             });
           }
-          if (migratedConcs.length) setConcs(migratedConcs);
-          if (s.scenarios) setScenarios(s.scenarios);
+          if (migratedConcs.length) { concsRef.current = migratedConcs; setConcs(migratedConcs); }
+          if (s.scenarios) { scenariosRef.current = s.scenarios; setScenarios(s.scenarios); }
         }
       } catch(_) {}
     })();
   }, []);
 
+  const saveAll = () => {
+    window.storage.set("grc5", JSON.stringify({
+      depts: deptsRef.current,
+      concs: concsRef.current,
+      scenarios: scenariosRef.current,
+      grupsEspecials: grupsEspecialsRef.current,
+      cursosBase: cursosBaseRef.current,
+      nivellsBase: nivellsBaseRef.current,
+      deptNotes: deptNotesRef.current
+    })).catch(()=>{});
+  };
+
   const save = useCallback((d, c, sc, ge, cb, nb, dn) => {
     window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb, deptNotes:dn})).catch(()=>{});
   }, []);
 
-  const upDepts = d => { setDepts(d); save(d, concs, scenarios, grupsEspecials, cursosBase, nivellsBase, deptNotes); };
-  const upConcs = c => { setConcs(c); save(depts, c, scenarios, grupsEspecials, cursosBase, nivellsBase, deptNotes); };
-  const upSc    = s => { setScenarios(s); save(depts, concs, s, grupsEspecials, cursosBase, nivellsBase, deptNotes); };
-  const upGE    = ge => { setGrupsEspecials(ge); save(depts, concs, scenarios, ge, cursosBase, nivellsBase, deptNotes); };
-  const upCursosBase = (cb, nb) => { setCursosBase(cb); setNivellsBase(nb); save(depts, concs, scenarios, grupsEspecials, cb, nb, deptNotes); };
-  const upDeptNotes = dn => { deptNotesRef.current = dn; setDeptNotes(dn); save(depts, concs, scenarios, grupsEspecials, cursosBase, nivellsBase, dn); };
+  const upDepts = d => { deptsRef.current=d; setDepts(d); save(d, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
+  const upConcs = c => { concsRef.current=c; setConcs(c); save(deptsRef.current, c, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
+  const upSc    = s => { scenariosRef.current=s; setScenarios(s); save(deptsRef.current, concsRef.current, s, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
+  const upGE    = ge => { grupsEspecialsRef.current=ge; setGrupsEspecials(ge); save(deptsRef.current, concsRef.current, scenariosRef.current, ge, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
+  const upCursosBase = (cb, nb) => { cursosBaseRef.current=cb; nivellsBaseRef.current=nb; setCursosBase(cb); setNivellsBase(nb); save(deptsRef.current, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cb, nb, deptNotesRef.current); };
+  const upDeptNotes = dn => { deptNotesRef.current=dn; setDeptNotes(dn); save(deptsRef.current, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, dn); };
 
   // Assignar/actualitzar/eliminar tutoria per a un grup
   const assignTutoria = useCallback((grup, deptId) => {
@@ -1460,7 +1479,7 @@ function App() {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                     <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)"}}>Notes del departament</div>
                     <button className="btn btn-navy btn-sm no-print"
-                      onClick={() => upDeptNotes(deptNotesRef.current)}>                      💾 Guardar notes
+                      onClick={() => saveAll()}>                      💾 Guardar notes
                     </button>
                   </div>
                   <textarea
