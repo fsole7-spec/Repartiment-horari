@@ -16,6 +16,7 @@
 
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -1454,19 +1455,18 @@ function App() {
                   <button className="btn btn-navy btn-sm" onClick={openAdd}>+ Afegir concepte</button>
                 </div>
                 <div className="dept-notes-box" style={{margin:"16px 0 8px"}}>
-                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)",marginBottom:6}}>Notes del departament</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)"}}>Notes del departament</div>
+                    <button className="btn btn-navy btn-sm no-print"
+                      onClick={() => upDeptNotes({...deptNotes, [actDept]: deptNotes[actDept]||""})}>
+                      💾 Guardar notes
+                    </button>
+                  </div>
                   <textarea
                     className="dept-notes-textarea"
                     placeholder="Escriu aquí observacions, acords, recordatoris o qualsevol nota del departament..."
                     value={deptNotes[actDept]||""}
-                    onChange={e => {
-                      const n = {...deptNotes, [actDept]: e.target.value};
-                      setDeptNotes(n);
-                    }}
-                    onBlur={e => {
-                      const n = {...deptNotes, [actDept]: e.target.value};
-                      upDeptNotes(n);
-                    }}
+                    onChange={e => setDeptNotes({...deptNotes, [actDept]: e.target.value})}
                     rows={4}
                     style={{width:"100%",boxSizing:"border-box",border:"1px solid var(--line)",borderRadius:6,padding:"10px 12px",fontSize:13,fontFamily:"inherit",resize:"vertical",background:"var(--white)",color:"var(--ink)",lineHeight:1.5}}
                   />
