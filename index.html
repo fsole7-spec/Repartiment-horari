@@ -19,6 +19,7 @@
 
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -725,6 +726,8 @@ function App() {
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const [cursosBase, setCursosBase]   = useState(CURSOS_BASE_DEFAULT);
+  const [grupsManual, setGrupsManual] = useState({});
+  const grupsManualRef = React.useRef({});
   const [nivellsBase, setNivellsBase] = useState(NIVELLS_BASE_DEFAULT);
   const cursosBaseRef  = React.useRef(CURSOS_BASE_DEFAULT);
   const nivellsBaseRef = React.useRef(NIVELLS_BASE_DEFAULT);
@@ -737,7 +740,8 @@ function App() {
     // Nivells base (1r ESO, 2n ESO, etc.)
     nivellsBase.forEach(nivell => {
       const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio" && c.tipus !== "tutoria");
-      const maxGrups = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups||1)) : 0;
+      const maxAuto = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups||1)) : 0;
+      const maxGrups = grupsManual[nivell] !== undefined ? grupsManual[nivell] : maxAuto;
       if (maxGrups > 0) result[nivell] = Array.from({length: maxGrups}, (_, i) => `${nivell} ${LLETRES_GRUP[i]||i+1}`);
     });
     // Grups especials: sempre apareixen a tutories (tenen tutoria pròpia)
@@ -745,7 +749,7 @@ function App() {
       result[ge.nom] = [ge.nom];
     });
     return result;
-  }, [concs, grupsEspecials]);
+  }, [concs, grupsEspecials, grupsManual]);
 
   // Tots els "grups" disponibles (per tutories): nivells base expandits + grups especials
   const totsElsGrups = useMemo(() => {
@@ -788,6 +792,7 @@ function App() {
           if (s.cursosBase)    { cursosBaseRef.current = s.cursosBase; setCursosBase(s.cursosBase); }
           if (s.nivellsBase)   { nivellsBaseRef.current = s.nivellsBase; setNivellsBase(s.nivellsBase); }
           if (s.deptNotes)     { deptNotesRef.current = s.deptNotes; setDeptNotes(s.deptNotes); }
+          if (s.grupsManual)   { grupsManualRef.current = s.grupsManual; setGrupsManual(s.grupsManual); }
           let migratedConcs = s.concs || [];
           if (s.tutories && !migratedConcs.some(c => c.tipus === "tutoria")) {
             Object.entries(s.tutories).forEach(([grup, deptId]) => {
@@ -818,13 +823,16 @@ function App() {
       grupsEspecials: grupsEspecialsRef.current,
       cursosBase: cursosBaseRef.current,
       nivellsBase: nivellsBaseRef.current,
-      deptNotes: deptNotesRef.current
+      deptNotes: deptNotesRef.current,
+      grupsManual: grupsManualRef.current
     })).catch(()=>{});
   };
 
   const save = useCallback((d, c, sc, ge, cb, nb, dn) => {
-    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb, deptNotes:dn})).catch(()=>{});
+    window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb, deptNotes:dn, grupsManual:grupsManualRef.current})).catch(()=>{});
   }, []);
+
+  const upGrupsManual = gm => { grupsManualRef.current=gm; setGrupsManual(gm); saveAll(); };
 
   const upDepts = d => { deptsRef.current=d; setDepts(d); save(d, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
   const upConcs = c => { concsRef.current=c; setConcs(c); save(deptsRef.current, c, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
@@ -1752,6 +1760,34 @@ function App() {
                     </div>
                     <div className="card"><div className="cv">{coordAssignades}/{nivellsAmbGrups.length}</div><div className="cl">Coord. assignades</div></div>
                     <div className="card"><div className="cv">{tutAssignades + coordAssignades*2}h</div><div className="cl">Total hores</div></div>
+                  </div>
+
+                  {/* Configuració manual de grups per nivell */}
+                  <div style={{background:"var(--bg)",borderRadius:8,padding:"12px 16px",marginBottom:20,border:"1px solid var(--line)"}}>
+                    <div style={{fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",color:"var(--muted)",marginBottom:10}}>
+                      Nombre de grups per nivell
+                    </div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                      {nivellsBase.map(nivell => {
+                        const baseConcs = concs.filter(c => c.curs === nivell && c.tipus !== "coordinacio" && c.tipus !== "tutoria");
+                        const maxAuto = baseConcs.length > 0 ? Math.max(...baseConcs.map(c => c.grups||1)) : 0;
+                        const val = grupsManual[nivell] !== undefined ? grupsManual[nivell] : maxAuto;
+                        return (
+                          <div key={nivell} style={{display:"flex",alignItems:"center",gap:6,background:"var(--white)",border:"1px solid var(--line)",borderRadius:6,padding:"5px 10px"}}>
+                            <span style={{fontSize:12,fontWeight:600,minWidth:60}}>{nivell}</span>
+                            <button onClick={()=>upGrupsManual({...grupsManualRef.current,[nivell]:Math.max(0,(val||0)-1)})}
+                              style={{width:22,height:22,border:"1px solid var(--line)",borderRadius:4,background:"var(--bg)",cursor:"pointer",fontWeight:700,fontSize:14,lineHeight:1}}>−</button>
+                            <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,minWidth:20,textAlign:"center"}}>{val||0}</span>
+                            <button onClick={()=>upGrupsManual({...grupsManualRef.current,[nivell]:(val||0)+1})}
+                              style={{width:22,height:22,border:"1px solid var(--line)",borderRadius:4,background:"var(--bg)",cursor:"pointer",fontWeight:700,fontSize:14,lineHeight:1}}>+</button>
+                            {grupsManual[nivell] !== undefined && (
+                              <button title="Tornar a automàtic" onClick={()=>{const gm={...grupsManualRef.current};delete gm[nivell];upGrupsManual(gm);}}
+                                style={{fontSize:10,color:"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0}}>↺</button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   {/* Taula tutories */}
