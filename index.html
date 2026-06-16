@@ -20,6 +20,7 @@
 
 
 
+
 // ─── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("grc-fonts")) {
   const l = document.createElement("link");
@@ -693,6 +694,8 @@ function App() {
   const [actDept, setActDept] = useState("CAT");
   const [view, setView]     = useState("dept");
   const [modal, setModal]   = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
   const [form, setForm]     = useState({});
   const [tfrId, setTfrId]   = useState(null);
   const [tfrTo, setTfrTo]   = useState("");
@@ -815,31 +818,38 @@ function App() {
     })();
   }, []);
 
-  const saveAll = () => {
-    window.storage.set("grc5", JSON.stringify({
-      depts: deptsRef.current,
-      concs: concsRef.current,
-      scenarios: scenariosRef.current,
-      grupsEspecials: grupsEspecialsRef.current,
-      cursosBase: cursosBaseRef.current,
-      nivellsBase: nivellsBaseRef.current,
-      deptNotes: deptNotesRef.current,
-      grupsManual: grupsManualRef.current
-    })).catch(()=>{});
+  const saveAll = async () => {
+    setSaving(true);
+    setSavedOk(false);
+    try {
+      await window.storage.set("grc5", JSON.stringify({
+        depts: deptsRef.current,
+        concs: concsRef.current,
+        scenarios: scenariosRef.current,
+        grupsEspecials: grupsEspecialsRef.current,
+        cursosBase: cursosBaseRef.current,
+        nivellsBase: nivellsBaseRef.current,
+        deptNotes: deptNotesRef.current,
+        grupsManual: grupsManualRef.current
+      }));
+      setSavedOk(true);
+      setTimeout(() => setSavedOk(false), 2000);
+    } catch(e) {}
+    setSaving(false);
   };
 
   const save = useCallback((d, c, sc, ge, cb, nb, dn) => {
     window.storage.set("grc5", JSON.stringify({depts:d, concs:c, scenarios:sc, grupsEspecials:ge, cursosBase:cb, nivellsBase:nb, deptNotes:dn, grupsManual:grupsManualRef.current})).catch(()=>{});
   }, []);
 
-  const upGrupsManual = gm => { grupsManualRef.current=gm; setGrupsManual(gm); saveAll(); };
+  const upGrupsManual = gm => { grupsManualRef.current=gm; setGrupsManual(gm); };
 
-  const upDepts = d => { deptsRef.current=d; setDepts(d); save(d, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
-  const upConcs = c => { concsRef.current=c; setConcs(c); save(deptsRef.current, c, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
-  const upSc    = s => { scenariosRef.current=s; setScenarios(s); save(deptsRef.current, concsRef.current, s, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
-  const upGE    = ge => { grupsEspecialsRef.current=ge; setGrupsEspecials(ge); save(deptsRef.current, concsRef.current, scenariosRef.current, ge, cursosBaseRef.current, nivellsBaseRef.current, deptNotesRef.current); };
-  const upCursosBase = (cb, nb) => { cursosBaseRef.current=cb; nivellsBaseRef.current=nb; setCursosBase(cb); setNivellsBase(nb); save(deptsRef.current, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cb, nb, deptNotesRef.current); };
-  const upDeptNotes = dn => { deptNotesRef.current=dn; setDeptNotes(dn); save(deptsRef.current, concsRef.current, scenariosRef.current, grupsEspecialsRef.current, cursosBaseRef.current, nivellsBaseRef.current, dn); };
+  const upDepts = d => { deptsRef.current=d; setDepts(d); };
+  const upConcs = c => { concsRef.current=c; setConcs(c); };
+  const upSc    = s => { scenariosRef.current=s; setScenarios(s); };
+  const upGE    = ge => { grupsEspecialsRef.current=ge; setGrupsEspecials(ge); };
+  const upCursosBase = (cb, nb) => { cursosBaseRef.current=cb; nivellsBaseRef.current=nb; setCursosBase(cb); setNivellsBase(nb); };
+  const upDeptNotes = dn => { deptNotesRef.current=dn; setDeptNotes(dn); };
 
   // Assignar/actualitzar/eliminar tutoria per a un grup
   const assignTutoria = useCallback((grup, deptId) => {
@@ -1219,7 +1229,9 @@ function App() {
             <button className={`tab${view==="scenarios"?" on":""}`} onClick={()=>setView("scenarios")}>Escenaris</button>
           </div>
           <div className="topbar-right no-print">
-            <button className="btn btn-ghost-white btn-sm" onClick={openSaveScenario}>💾 Desa</button>
+            <button className="btn btn-ghost-white btn-sm" onClick={saveAll} disabled={saving}>
+              {saving ? "⏳ Desant..." : savedOk ? "✅ Desat!" : "💾 Desa"}
+            </button>
             <button className="btn btn-ghost-white btn-sm" onClick={()=>window.print()}>🖨 PDF</button>
           </div>
         </div>
