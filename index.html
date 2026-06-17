@@ -5,13 +5,13 @@
   <title>GRC · Gestió de Recursos 26/27</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <style>body{margin:0;padding:0}</style>
 </head>
 <body>
   <div id="root"></div>
   <script>const SUPABASE_URL="https://yibsfupqsscnucaimbzm.supabase.co";const SUPABASE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpYnNmdXBxc3NjbnVjYWltYnptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE2Mjg1NjMsImV4cCI6MjA4NzIwNDU2M30.jfxlQANVGSc64A4NhQ_qTXp2wT47mbKvTKMyUMAN2Ys";const supabaseHeaders={"Content-Type":"application/json","apikey":SUPABASE_KEY,"Authorization":"Bearer "+SUPABASE_KEY};window.storage={get:async(key)=>{try{const res=await fetch(SUPABASE_URL+"/rest/v1/grc_data?id=eq."+key+"&select=data",{headers:supabaseHeaders});if(!res.ok)return null;const rows=await res.json();if(rows&&rows.length>0)return{value:JSON.stringify(rows[0].data)};return null;}catch(e){return null;}},set:async(key,value)=>{try{const data=typeof value==="string"?JSON.parse(value):value;const res=await fetch(SUPABASE_URL+"/rest/v1/grc_data?id=eq."+key,{method:"PATCH",headers:{...supabaseHeaders,"Prefer":"return=minimal"},body:JSON.stringify({data:data,updated_at:new Date().toISOString()})});return res.ok?{value}:null;}catch(e){return null;}}};</script>
-  <script type="text/babel" data-presets="react">
+  <script type="text/babel">
 
 
 
